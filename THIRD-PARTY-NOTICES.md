@@ -1,14 +1,18 @@
 # Third-Party Notices
 
-PortableDropper 内嵌/随附了以下第三方组件：
+PortableDropper embeds or ships the following third-party components:
 
-## 7-Zip（7z.exe / 7z.dll）
+## 7-Zip (7z.exe / 7z.dll)
 
-- 作者：Igor Pavlov
-- 官网：https://www.7-zip.org/
-- 许可：GNU Lesser General Public License（LGPL），附带 unRAR 限制条款
-- 用途：在运行时从本程序资源中提取到临时目录，作为独立进程执行压缩包解压（.7z/.rar 等）
-- 说明：本组件**未做任何修改**，随本程序整体分发；根据 LGPL 要求，用户可以自行替换为其他版本或删除。
-- 许可全文：https://www.7-zip.org/license.txt
+- Author: Igor Pavlov
+- Website: https://www.7-zip.org/
+- License: GNU Lesser General Public License (LGPL), with unRAR restriction clause
+- Usage: extracted at runtime from this program's embedded resources to a
+  temporary directory and run as a separate process to extract archives
+  (.7z/.rar, etc.)
+- Note: this component is **unmodified** and distributed as part of this program;
+  per the LGPL requirement, users may replace it with another version or remove it.
+- Full license text: https://www.7-zip.org/license.txt
 
-本项目的其余代码（PortableDropper.cs 等）采用 MIT License，见 LICENSE 文件。
+All other code in this project (PortableDropper.cs, etc.) is licensed under the
+MIT License — see the LICENSE file.
