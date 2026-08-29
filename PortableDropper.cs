@@ -9,19 +9,21 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Windows.Forms;
 using Microsoft.Win32;
 
 namespace PortableDropper
 {
     // ============================================================
-    //  PortableDropper - 便携软件安装器
+    //  PortableDropper - 便携软件安装器 / portable app installer
     //  拖拽文件夹 / 压缩包 → 装入 %LOCALAPPDATA%\Programs，生成开始菜单快捷方式，
     //  并注册到「应用和功能」列表（内置卸载器、-List 清单、多 exe 弹窗选择）。
+    //  中英双语：跟随系统语言自动切换；窗口内可手动切换；命令行 -Lang zh|en 覆盖。
     //  使用方式：
     //    * 把文件夹或压缩包直接拖到本 exe 图标上（批处理模式，完成后自动退出）
     //    * 双击打开窗口，把文件拖进窗口区域
-    //    * 命令行：-List / -Uninstall <名称> / -Desktop / -NoRegister / -KeepFiles / -NoShortcut
+    //    * 命令行：-List / -Uninstall <名称> / -Desktop / -NoRegister / -KeepFiles / -NoShortcut / -Lang zh|en
     //  特性：
     //    * PerMonitorV2 DPI 感知（高分辨率不模糊）
     //    * 深色模式跟随系统（Win11 深色标题栏）
@@ -84,6 +86,178 @@ namespace PortableDropper
     }
 
     // ------------------------------------------------------------
+    //  国际化（中文主 / 英文可选）
+    // ------------------------------------------------------------
+    internal static class L10n
+    {
+        public static bool Zh = true;
+
+        public static void Init(string lang)
+        {
+            if (!string.IsNullOrEmpty(lang))
+            {
+                Zh = lang.StartsWith("zh", StringComparison.OrdinalIgnoreCase);
+                return;
+            }
+            try
+            {
+                Zh = Thread.CurrentThread.CurrentUICulture.Name.StartsWith("zh", StringComparison.OrdinalIgnoreCase);
+            }
+            catch { Zh = true; }
+        }
+
+        public static string T(string key, params object[] args)
+        {
+            string s;
+            if (Zh) { if (!ZhMap.TryGetValue(key, out s)) s = key; }
+            else { if (!EnMap.TryGetValue(key, out s)) s = key; }
+            if (args != null && args.Length > 0)
+            {
+                try { s = string.Format(s, args); } catch { }
+            }
+            return s;
+        }
+
+        private static readonly Dictionary<string, string> EnMap = new Dictionary<string, string>
+        {
+            // 主窗口
+            { "title", "PortableDropper" },
+            { "dropHint1", "Drag a folder or archive here, or onto the program icon" },
+            { "dropHint2", "Supports: folders / .zip / .7z / .rar (built-in 7-Zip) / .tar .gz etc." },
+            { "dropHint3", "Installs into {0}" },
+            { "dropHint4", "Auto-creates a Start Menu shortcut and registers into Apps & features; a picker appears when several executables are found" },
+            { "btnOpenDir", "Open target folder" },
+            { "btnManage", "Manage registered apps" },
+            { "btnClearLog", "Clear log" },
+            { "btnQuit", "Exit" },
+            { "chkDesktop", "Also create a desktop shortcut" },
+            { "statusTarget", "Target folder: {0}" },
+            { "statusWorking", "Working…" },
+            { "statusDone", "Done — see log below" },
+            { "startProcessing", "==== Processing {0} item(s) ====" },
+            // 选择窗口
+            { "pickerTitle", "Choose main program - {0}" },
+            { "pickerHint", "Multiple executables found — choose the main program:" },
+            { "btnOk", "OK" },
+            { "btnSkipShortcut", "Skip shortcut" },
+            // 管理窗口
+            { "manageTitle", "Registered portable apps" },
+            { "colName", "Name" },
+            { "colVersion", "Version" },
+            { "colPublisher", "Publisher" },
+            { "colLocation", "Location" },
+            { "btnUninstallSel", "Uninstall selected" },
+            { "btnOpenFolder", "Open folder" },
+            { "btnRefresh", "Refresh" },
+            { "btnClose", "Close" },
+            { "confirmUninstall", "Uninstall {0}?\n(This removes the registry entry, shortcuts and the app folder)" },
+            // 日志
+            { "errNoPath", "✖ Path does not exist: {0}" },
+            { "alreadyInTarget", "· Already in the target folder, skipping move: {0}" },
+            { "movedDir", "✔ Moved folder → {0}" },
+            { "extractFail", "✖ Extraction failed: {0}" },
+            { "extracted", "✔ Extracted {0} → {1}" },
+            { "recycled", "· Original archive moved to Recycle Bin" },
+            { "recycleFailed", "△ Could not recycle the original archive, kept at: {0}" },
+            { "movedFile", "✔ Moved file → {0}" },
+            { "fail", "✖ Failed: {0} → {1}" },
+            { "fallback7z", "△ Embedded 7-Zip failed; falling back to installed 7-Zip" },
+            { "no7z", "△ No usable 7-Zip found (embedded resources missing or failed)" },
+            { "extractError", "△ Extraction error: {0}" },
+            { "noMain", "△ No main program (.exe/.bat/.cmd/.vbs) found, no shortcut created: {0}" },
+            { "autoPick", "· Multiple executables, auto-picked (-AutoPick): {0}" },
+            { "pickCancelled", "· Shortcut creation cancelled by user: {0}" },
+            { "pickedManual", "· Manually chosen main program: {0}" },
+            { "shortcut", "✔ Shortcut: {0} → {1}" },
+            { "desktopShortcut", "✔ Desktop shortcut: {0}" },
+            { "desktopFail", "△ Failed to create desktop shortcut: {0}" },
+            { "shortcutFail", "△ Failed to create shortcut: {0}" },
+            { "registered", "✔ Registered to Apps & features: {0} ({1} / {2})" },
+            { "registerFail", "△ Failed to register to Apps & features: {0}" },
+            { "uninstNotFound", "✖ No registered app found: {0}" },
+            { "uninstRemoved", "✔ Removed Apps & features entry: {0}" },
+            { "delDesktopShortcut", "✔ Deleted desktop shortcut: {0}" },
+            { "keepFiles", "· Files kept (-KeepFiles): {0}" },
+            { "deletedFile", "✔ Deleted file: {0}" },
+            { "skipFileDel", "△ Skipped deletion: could not locate the target file" },
+            { "deletedFolder", "✔ Deleted folder: {0}" },
+            { "skipFolderDel", "△ Skipped folder deletion (outside the target folder): {0}" },
+            { "uninstFail", "✖ Uninstall failed: {0}" },
+            { "delShortcut", "✔ Deleted shortcut: {0}" },
+            { "listEmpty", "(no apps registered via PortableDropper)" },
+            { "pubDefault", "Portable" },
+            { "lnkDesc", "{0} (portable)" }
+        };
+
+        private static readonly Dictionary<string, string> ZhMap = new Dictionary<string, string>
+        {
+            { "title", "便携软件安装器 PortableDropper" },
+            { "dropHint1", "把文件夹或压缩包拖到这里，或直接拖到本程序图标上" },
+            { "dropHint2", "支持: 文件夹 / .zip / .7z / .rar（内置 7-Zip）/ .tar .gz 等" },
+            { "dropHint3", "自动装入 {0}" },
+            { "dropHint4", "自动生成开始菜单快捷方式并注册到「应用和功能」；多个 exe 会弹窗让你选择" },
+            { "btnOpenDir", "打开目标目录" },
+            { "btnManage", "管理已注册应用" },
+            { "btnClearLog", "清空日志" },
+            { "btnQuit", "退出" },
+            { "chkDesktop", "同时创建桌面快捷方式" },
+            { "statusTarget", "目标目录: {0}" },
+            { "statusWorking", "处理中…" },
+            { "statusDone", "处理完成，详见日志" },
+            { "startProcessing", "==== 开始处理 {0} 项 ====" },
+            { "pickerTitle", "选择主程序 - {0}" },
+            { "pickerHint", "文件夹里发现多个可执行文件，请选择主程序：" },
+            { "btnOk", "确定" },
+            { "btnSkipShortcut", "跳过快捷方式" },
+            { "manageTitle", "已注册的便携应用" },
+            { "colName", "名称" },
+            { "colVersion", "版本" },
+            { "colPublisher", "发布者" },
+            { "colLocation", "位置" },
+            { "btnUninstallSel", "卸载所选" },
+            { "btnOpenFolder", "打开目录" },
+            { "btnRefresh", "刷新" },
+            { "btnClose", "关闭" },
+            { "confirmUninstall", "确定卸载 {0} ？\n（将删除注册项、快捷方式及所在文件夹）" },
+            { "errNoPath", "✖ 路径不存在: {0}" },
+            { "alreadyInTarget", "· 已在目标目录，跳过移动： {0}" },
+            { "movedDir", "✔ 已移动文件夹 → {0}" },
+            { "extractFail", "✖ 解压失败: {0}" },
+            { "extracted", "✔ 已解压 {0} → {1}" },
+            { "recycled", "· 原压缩包已移入回收站" },
+            { "recycleFailed", "△ 未能回收原压缩包，已保留在原处: {0}" },
+            { "movedFile", "✔ 已移动文件 → {0}" },
+            { "fail", "✖ 失败: {0} → {1}" },
+            { "fallback7z", "△ 内置 7-Zip 失败，改用系统安装的 7-Zip" },
+            { "no7z", "△ 未找到可用的 7-Zip（内置资源缺失或运行失败）" },
+            { "extractError", "△ 解压异常: {0}" },
+            { "noMain", "△ 未找到主程序 (.exe/.bat/.cmd/.vbs)，未创建快捷方式: {0}" },
+            { "autoPick", "· 多个可执行文件，自动选择 (-AutoPick): {0}" },
+            { "pickCancelled", "· 用户取消了快捷方式创建: {0}" },
+            { "pickedManual", "· 手动选择主程序: {0}" },
+            { "shortcut", "✔ 快捷方式: {0}  →  {1}" },
+            { "desktopShortcut", "✔ 桌面快捷方式: {0}" },
+            { "desktopFail", "△ 桌面快捷方式创建失败: {0}" },
+            { "shortcutFail", "△ 创建快捷方式失败: {0}" },
+            { "registered", "✔ 已注册到「应用和功能」: {0}  ({1} / {2})" },
+            { "registerFail", "△ 注册「应用和功能」失败: {0}" },
+            { "uninstNotFound", "✖ 未找到已注册应用: {0}" },
+            { "uninstRemoved", "✔ 已移除「应用和功能」注册项: {0}" },
+            { "delDesktopShortcut", "✔ 已删除桌面快捷方式: {0}" },
+            { "keepFiles", "· 已保留文件（-KeepFiles）: {0}" },
+            { "deletedFile", "✔ 已删除文件: {0}" },
+            { "skipFileDel", "△ 跳过删除：无法定位目标文件" },
+            { "deletedFolder", "✔ 已删除文件夹: {0}" },
+            { "skipFolderDel", "△ 跳过文件夹删除（位置不在目标目录内）: {0}" },
+            { "uninstFail", "✖ 卸载失败: {0}" },
+            { "delShortcut", "✔ 已删除快捷方式: {0}" },
+            { "listEmpty", "（没有已通过 PortableDropper 注册的应用）" },
+            { "pubDefault", "绿色软件" },
+            { "lnkDesc", "{0}（便携版）" }
+        };
+    }
+
+    // ------------------------------------------------------------
     //  多 exe 选择窗口
     // ------------------------------------------------------------
     internal class ExePickerForm : Form
@@ -95,7 +269,7 @@ namespace PortableDropper
         public ExePickerForm(string appName, List<string> exes, string defaultPath)
         {
             _exes = exes;
-            Text = "选择主程序 - " + appName;
+            Text = L10n.T("pickerTitle", appName);
             Width = 480;
             Height = 400;
             MinimumSize = new Size(380, 300);
@@ -106,7 +280,7 @@ namespace PortableDropper
 
             var lbl = new Label
             {
-                Text = "文件夹里发现多个可执行文件，请选择主程序：",
+                Text = L10n.T("pickerHint"),
                 Dock = DockStyle.Top,
                 Height = 34,
                 Padding = new Padding(12, 10, 0, 0)
@@ -126,9 +300,9 @@ namespace PortableDropper
             _list.SelectedIndex = Math.Max(0, exes.IndexOf(defaultPath));
 
             var bottom = new Panel { Dock = DockStyle.Bottom, Height = 50 };
-            var ok = new Button { Text = "确定", AutoSize = true, Location = new Point(160, 12) };
+            var ok = new Button { Text = L10n.T("btnOk"), AutoSize = true, Location = new Point(160, 12) };
             ok.Click += (s, e) => Finish(true);
-            var skip = new Button { Text = "跳过快捷方式", AutoSize = true, Location = new Point(248, 12) };
+            var skip = new Button { Text = L10n.T("btnSkipShortcut"), AutoSize = true, Location = new Point(248, 12) };
             skip.Click += (s, e) => Finish(false);
             bottom.Controls.Add(ok);
             bottom.Controls.Add(skip);
@@ -160,7 +334,7 @@ namespace PortableDropper
         public AppsListForm(Engine engine)
         {
             _engine = engine;
-            Text = "已注册的便携应用";
+            Text = L10n.T("manageTitle");
             Width = 720;
             Height = 420;
             MinimumSize = new Size(560, 300);
@@ -177,20 +351,20 @@ namespace PortableDropper
                 BackColor = Theme.PanelBack,
                 ForeColor = Theme.Text
             };
-            _list.Columns.Add("名称", 180);
-            _list.Columns.Add("版本", 90);
-            _list.Columns.Add("发布者", 130);
-            _list.Columns.Add("位置", 270);
+            _list.Columns.Add(L10n.T("colName"), 180);
+            _list.Columns.Add(L10n.T("colVersion"), 90);
+            _list.Columns.Add(L10n.T("colPublisher"), 130);
+            _list.Columns.Add(L10n.T("colLocation"), 270);
             _list.DoubleClick += (s, e) => OpenSelected();
 
             var bottom = new Panel { Dock = DockStyle.Bottom, Height = 46 };
-            var btnUn = new Button { Text = "卸载所选", AutoSize = true, Location = new Point(10, 10) };
+            var btnUn = new Button { Text = L10n.T("btnUninstallSel"), AutoSize = true, Location = new Point(10, 10) };
             btnUn.Click += (s, e) => UninstallSelected();
-            var btnOpen = new Button { Text = "打开目录", AutoSize = true, Location = new Point(120, 10) };
+            var btnOpen = new Button { Text = L10n.T("btnOpenFolder"), AutoSize = true, Location = new Point(120, 10) };
             btnOpen.Click += (s, e) => OpenSelected();
-            var btnRefresh = new Button { Text = "刷新", AutoSize = true, Location = new Point(210, 10) };
+            var btnRefresh = new Button { Text = L10n.T("btnRefresh"), AutoSize = true, Location = new Point(210, 10) };
             btnRefresh.Click += (s, e) => Reload();
-            var btnClose = new Button { Text = "关闭", AutoSize = true, Location = new Point(280, 10) };
+            var btnClose = new Button { Text = L10n.T("btnClose"), AutoSize = true, Location = new Point(280, 10) };
             btnClose.Click += (s, e) => Close();
             bottom.Controls.Add(btnUn);
             bottom.Controls.Add(btnOpen);
@@ -242,7 +416,7 @@ namespace PortableDropper
             ListViewItem it = Selected();
             if (it == null) return;
             string name = it.Text;
-            if (MessageBox.Show("确定卸载 " + name + " ？\n（将删除注册项、快捷方式及所在文件夹）", "PortableDropper",
+            if (MessageBox.Show(L10n.T("confirmUninstall", name), "PortableDropper",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
             _engine.UninstallApp(name);
             Reload();
@@ -258,6 +432,7 @@ namespace PortableDropper
             Application.SetCompatibleTextRenderingDefault(false);
 
             Options opt = Options.Parse(args);
+            L10n.Init(opt.Lang);
             Engine engine = new Engine(opt);
 
             // -List：列出已注册应用
@@ -265,7 +440,7 @@ namespace PortableDropper
             {
                 List<string> lines = new List<string>();
                 List<string[]> rows = engine.ListRegistered();
-                if (rows.Count == 0) lines.Add("（没有已通过 PortableDropper 注册的应用）");
+                if (rows.Count == 0) lines.Add(L10n.T("listEmpty"));
                 foreach (string[] r in rows) lines.Add(r[0] + " | " + r[1] + " | " + r[2] + " | " + r[3]);
                 foreach (string l in lines) Console.WriteLine(l);
                 if (opt.LogPath != null)
@@ -331,6 +506,7 @@ namespace PortableDropper
         public bool ListMode;        // -List
         public string UninstallName; // -Uninstall <名称>
         public string DesktopPath = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+        public string Lang = "";     // -Lang zh|en（默认跟随系统）
         public bool ShowGui;
         public string LogPath;
 
@@ -349,6 +525,7 @@ namespace PortableDropper
                 else if (a.Equals("-List", StringComparison.OrdinalIgnoreCase)) o.ListMode = true;
                 else if (a.Equals("-Gui", StringComparison.OrdinalIgnoreCase)) o.ShowGui = true;
                 else if (a.Equals("-Uninstall", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length) o.UninstallName = args[++i];
+                else if (a.Equals("-Lang", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length) o.Lang = args[++i];
                 else if (a.Equals("-DesktopFolder", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length) o.DesktopPath = args[++i];
                 else if (a.Equals("-Destination", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length) o.Destination = args[++i];
                 else if (a.Equals("-StartMenuFolder", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length) o.StartMenuFolder = args[++i];
@@ -407,7 +584,7 @@ namespace PortableDropper
             {
                 if (!File.Exists(raw) && !Directory.Exists(raw))
                 {
-                    AddLog("✖ 路径不存在: " + raw);
+                    AddLog(L10n.T("errNoPath", raw));
                     return;
                 }
 
@@ -421,13 +598,13 @@ namespace PortableDropper
                     if (parent != null && string.Equals(parent.TrimEnd('\\'), Opt.Destination.TrimEnd('\\'),
                             StringComparison.OrdinalIgnoreCase))
                     {
-                        AddLog("· 已在目标目录，跳过移动： " + name);
+                        AddLog(L10n.T("alreadyInTarget", name));
                         TryShortcut(full, name, null);
                         return;
                     }
                     string target = UniquePath(Path.Combine(Opt.Destination, name));
                     MoveDirectory(full, target);
-                    AddLog("✔ 已移动文件夹 → " + target);
+                    AddLog(L10n.T("movedDir", target));
                     TryShortcut(target, name, null);
                     return;
                 }
@@ -440,15 +617,15 @@ namespace PortableDropper
                     Directory.CreateDirectory(target);
                     if (!Extract(full, target, ext))
                     {
-                        AddLog("✖ 解压失败: " + name);
+                        AddLog(L10n.T("extractFail", name));
                         try { Directory.Delete(target, true); } catch { }
                         return;
                     }
-                    AddLog("✔ 已解压 " + name + " → " + target);
+                    AddLog(L10n.T("extracted", name, target));
                     if (!Opt.KeepArchive)
                     {
-                        if (Recycle(full)) AddLog("· 原压缩包已移入回收站");
-                        else AddLog("△ 未能回收原压缩包，已保留在原处: " + full);
+                        if (Recycle(full)) AddLog(L10n.T("recycled"));
+                        else AddLog(L10n.T("recycleFailed", full));
                     }
                     TryShortcut(target, appName, null);
                     return;
@@ -457,13 +634,13 @@ namespace PortableDropper
                 // 普通文件：直接移动
                 string dest = UniquePath(Path.Combine(Opt.Destination, name));
                 MoveFile(full, dest);
-                AddLog("✔ 已移动文件 → " + dest);
+                AddLog(L10n.T("movedFile", dest));
                 if (ext.Equals(".exe", StringComparison.OrdinalIgnoreCase))
                     TryShortcut(Path.GetDirectoryName(dest), Path.GetFileNameWithoutExtension(name), dest);
             }
             catch (Exception ex)
             {
-                AddLog("✖ 失败: " + raw + " → " + ex.Message);
+                AddLog(L10n.T("fail", raw, ex.Message));
             }
         }
 
@@ -489,17 +666,17 @@ namespace PortableDropper
                     string installed = Find7zInstalled();
                     if (installed != null)
                     {
-                        AddLog("△ 内置 7-Zip 失败，改用系统安装的 7-Zip");
+                        AddLog(L10n.T("fallback7z"));
                         return Run(installed, "x -y -o\"" + dest + "\" \"" + src + "\"");
                     }
-                    AddLog("△ 未找到可用的 7-Zip（内置资源缺失或运行失败）");
+                    AddLog(L10n.T("no7z"));
                     return false;
                 }
                 return Run("tar.exe", "-xf \"" + src + "\" -C \"" + dest + "\"");
             }
             catch (Exception ex)
             {
-                AddLog("△ 解压异常: " + ex.Message);
+                AddLog(L10n.T("extractError", ex.Message));
                 return false;
             }
         }
@@ -600,7 +777,7 @@ namespace PortableDropper
 
                 if (candidates.Count == 0)
                 {
-                    AddLog("△ 未找到主程序 (.exe/.bat/.cmd/.vbs)，未创建快捷方式: " + dir);
+                    AddLog(L10n.T("noMain", dir));
                     return;
                 }
 
@@ -613,7 +790,7 @@ namespace PortableDropper
                 {
                     string h = PickMainExe(dir, appName);
                     exe = h ?? candidates[0];
-                    AddLog("· 多个可执行文件，自动选择 (-AutoPick): " + Path.GetFileName(exe));
+                    AddLog(L10n.T("autoPick", Path.GetFileName(exe)));
                 }
                 else
                 {
@@ -622,19 +799,19 @@ namespace PortableDropper
                     {
                         if (picker.ShowDialog() != DialogResult.OK || picker.SelectedPath == null)
                         {
-                            AddLog("· 用户取消了快捷方式创建: " + dir);
+                            AddLog(L10n.T("pickCancelled", dir));
                             return;
                         }
                         exe = picker.SelectedPath;
                     }
-                    AddLog("· 手动选择主程序: " + Path.GetFileName(exe));
+                    AddLog(L10n.T("pickedManual", Path.GetFileName(exe)));
                 }
 
                 string clean = CleanName(appName);
                 Directory.CreateDirectory(Opt.StartMenuFolder);
                 string lnk = UniquePath(Path.Combine(Opt.StartMenuFolder, clean + ".lnk"));
                 CreateLnk(lnk, exe, clean);
-                AddLog("✔ 快捷方式: " + lnk + "  →  " + Path.GetFileName(exe));
+                AddLog(L10n.T("shortcut", lnk, Path.GetFileName(exe)));
 
                 if (Opt.AddDesktop)
                 {
@@ -643,11 +820,11 @@ namespace PortableDropper
                         Directory.CreateDirectory(Opt.DesktopPath);
                         string dlnk = UniquePath(Path.Combine(Opt.DesktopPath, clean + ".lnk"));
                         CreateLnk(dlnk, exe, clean);
-                        AddLog("✔ 桌面快捷方式: " + dlnk);
+                        AddLog(L10n.T("desktopShortcut", dlnk));
                     }
                     catch (Exception dex)
                     {
-                        AddLog("△ 桌面快捷方式创建失败: " + dex.Message);
+                        AddLog(L10n.T("desktopFail", dex.Message));
                     }
                 }
 
@@ -655,7 +832,7 @@ namespace PortableDropper
             }
             catch (Exception ex)
             {
-                AddLog("△ 创建快捷方式失败: " + ex.Message);
+                AddLog(L10n.T("shortcutFail", ex.Message));
             }
         }
 
@@ -667,7 +844,7 @@ namespace PortableDropper
             sc.TargetPath = target;
             sc.WorkingDirectory = Path.GetDirectoryName(target);
             sc.IconLocation = target + ",0";
-            sc.Description = appName + "（便携版）";
+            sc.Description = L10n.T("lnkDesc", appName);
             sc.Save();
         }
 
@@ -685,7 +862,7 @@ namespace PortableDropper
                 string ver = !string.IsNullOrEmpty(vi.FileVersion) ? vi.FileVersion : vi.ProductVersion;
                 if (string.IsNullOrEmpty(ver)) ver = "1.0.0";
                 string pub = vi.CompanyName;
-                if (string.IsNullOrEmpty(pub)) pub = "绿色软件";
+                if (string.IsNullOrEmpty(pub)) pub = L10n.T("pubDefault");
 
                 long sizeKb = DirSizeKB(exe, dir);
 
@@ -702,11 +879,11 @@ namespace PortableDropper
                     k.SetValue("PortableDropper", 1, RegistryValueKind.DWord);
                     k.SetValue("UninstallString", "\"" + self + "\" -Uninstall \"" + clean + "\"");
                 }
-                AddLog("✔ 已注册到「应用和功能」: " + clean + "  (" + ver + " / " + pub + ")");
+                AddLog(L10n.T("registered", clean, ver, pub));
             }
             catch (Exception ex)
             {
-                AddLog("△ 注册「应用和功能」失败: " + ex.Message);
+                AddLog(L10n.T("registerFail", ex.Message));
             }
         }
 
@@ -726,7 +903,7 @@ namespace PortableDropper
                 {
                     if (root == null)
                     {
-                        AddLog("✖ 未找到已注册应用: " + name);
+                        AddLog(L10n.T("uninstNotFound", name));
                         return;
                     }
                     foreach (string sub in root.GetSubKeyNames())
@@ -755,7 +932,7 @@ namespace PortableDropper
 
                 if (matchKey == null)
                 {
-                    AddLog("✖ 未找到已注册应用: " + name);
+                    AddLog(L10n.T("uninstNotFound", name));
                     return;
                 }
 
@@ -763,14 +940,14 @@ namespace PortableDropper
                 {
                     if (root != null) root.DeleteSubKeyTree(matchKey, false);
                 }
-                AddLog("✔ 已移除「应用和功能」注册项: " + disp);
+                AddLog(L10n.T("uninstRemoved", disp));
 
                 // 快捷方式（开始菜单 + 可能的 (2) 后缀 + 桌面）
                 DeleteShortcutsNamed(CleanName(disp));
                 try
                 {
                     string de = Path.Combine(Opt.DesktopPath, CleanName(disp) + ".lnk");
-                    if (File.Exists(de)) { File.Delete(de); AddLog("✔ 已删除桌面快捷方式: " + de); }
+                    if (File.Exists(de)) { File.Delete(de); AddLog(L10n.T("delDesktopShortcut", de)); }
                 }
                 catch { }
 
@@ -781,7 +958,7 @@ namespace PortableDropper
                         StringComparison.OrdinalIgnoreCase);
                     if (Opt.KeepFiles)
                     {
-                        AddLog("· 已保留文件（-KeepFiles）: " + installLoc);
+                        AddLog(L10n.T("keepFiles", installLoc));
                     }
                     else if (isRoot)
                     {
@@ -790,9 +967,9 @@ namespace PortableDropper
                                 Opt.Destination.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
                         {
                             File.Delete(exe);
-                            AddLog("✔ 已删除文件: " + exe);
+                            AddLog(L10n.T("deletedFile", exe));
                         }
-                        else AddLog("△ 跳过删除：无法定位目标文件");
+                        else AddLog(L10n.T("skipFileDel"));
                     }
                     else
                     {
@@ -801,15 +978,15 @@ namespace PortableDropper
                                 Opt.Destination.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
                         {
                             Directory.Delete(installLoc, true);
-                            AddLog("✔ 已删除文件夹: " + installLoc);
+                            AddLog(L10n.T("deletedFolder", installLoc));
                         }
-                        else AddLog("△ 跳过文件夹删除（位置不在目标目录内）: " + installLoc);
+                        else AddLog(L10n.T("skipFolderDel", installLoc));
                     }
                 }
             }
             catch (Exception ex)
             {
-                AddLog("✖ 卸载失败: " + ex.Message);
+                AddLog(L10n.T("uninstFail", ex.Message));
             }
         }
 
@@ -825,7 +1002,7 @@ namespace PortableDropper
                             RegexOptions.IgnoreCase))
                     {
                         File.Delete(f);
-                        AddLog("✔ 已删除快捷方式: " + f);
+                        AddLog(L10n.T("delShortcut", f));
                     }
                 }
             }
@@ -1110,6 +1287,12 @@ namespace PortableDropper
         private TextBox _log;
         private Label _status;
         private CheckBox _chkDesktop;
+        private ComboBox _langCombo;
+        private Panel _drop;
+        private Button _btnOpen;
+        private Button _btnApps;
+        private Button _btnClear;
+        private Button _btnQuit;
 
         public MainForm(Engine engine, Options opt)
         {
@@ -1124,12 +1307,23 @@ namespace PortableDropper
             Theme.Apply(Handle);
         }
 
+        private void ApplyUiText()
+        {
+            Text = L10n.T("title");
+            _btnOpen.Text = L10n.T("btnOpenDir");
+            _btnApps.Text = L10n.T("btnManage");
+            _btnClear.Text = L10n.T("btnClearLog");
+            _btnQuit.Text = L10n.T("btnQuit");
+            _chkDesktop.Text = L10n.T("chkDesktop");
+            _status.Text = L10n.T("statusTarget", _opt.Destination);
+            _drop.Invalidate();
+        }
+
         private void BuildUi()
         {
-            Text = "便携软件安装器 PortableDropper";
-            Width = 660;
+            Width = 740;
             Height = 490;
-            MinimumSize = new Size(500, 370);
+            MinimumSize = new Size(560, 370);
             StartPosition = FormStartPosition.CenterScreen;
             BackColor = Theme.Back;
             ForeColor = Theme.Text;
@@ -1141,18 +1335,18 @@ namespace PortableDropper
                 else Append(line);
             };
 
-            var drop = new Panel
+            _drop = new Panel
             {
                 Dock = DockStyle.Top,
                 Height = 150,
                 AllowDrop = true,
                 BackColor = Theme.PanelBackAlt
             };
-            drop.DragEnter += (s, e) =>
+            _drop.DragEnter += (s, e) =>
             {
                 if (e.Data.GetDataPresent(DataFormats.FileDrop)) e.Effect = DragDropEffects.Copy;
             };
-            drop.DragDrop += (s, e) =>
+            _drop.DragDrop += (s, e) =>
             {
                 if (e.Data.GetDataPresent(DataFormats.FileDrop))
                 {
@@ -1160,15 +1354,15 @@ namespace PortableDropper
                     ProcessPaths(files);
                 }
             };
-            drop.Paint += (s, e) =>
+            _drop.Paint += (s, e) =>
             {
                 using (var b = new SolidBrush(Theme.Text))
                 {
                     e.Graphics.DrawString(
-                        "把文件夹或压缩包拖到这里，或直接拖到本程序图标上\n" +
-                        "支持: 文件夹 / .zip / .7z / .rar（内置 7-Zip）/ .tar .gz 等\n" +
-                        "自动装入 " + _opt.Destination + "\n" +
-                        "自动生成开始菜单快捷方式并注册到「应用和功能」；多个 exe 会弹窗让你选择",
+                        L10n.T("dropHint1") + "\n" +
+                        L10n.T("dropHint2") + "\n" +
+                        L10n.T("dropHint3", _opt.Destination) + "\n" +
+                        L10n.T("dropHint4"),
                         Font, b, 22, 26);
                 }
             };
@@ -1187,39 +1381,54 @@ namespace PortableDropper
             _status = new Label
             {
                 Dock = DockStyle.Bottom,
-                Height = 22,
-                Text = "目标目录: " + _opt.Destination
+                Height = 22
             };
 
             var bottom = new Panel { Dock = DockStyle.Bottom, Height = 42 };
-            var btnOpen = new Button { Text = "打开目标目录", AutoSize = true, Location = new Point(10, 9) };
-            btnOpen.Click += (s, e) => { try { Process.Start("explorer.exe", _opt.Destination); } catch { } };
-            var btnApps = new Button { Text = "管理已注册应用", AutoSize = true, Location = new Point(140, 9) };
-            btnApps.Click += (s, e) =>
+            _btnOpen = new Button { AutoSize = true, Location = new Point(10, 9) };
+            _btnOpen.Click += (s, e) => { try { Process.Start("explorer.exe", _opt.Destination); } catch { } };
+            _btnApps = new Button { AutoSize = true, Location = new Point(140, 9) };
+            _btnApps.Click += (s, e) =>
             {
                 using (var f = new AppsListForm(_engine)) { f.ShowDialog(this); }
             };
-            var btnClear = new Button { Text = "清空日志", AutoSize = true, Location = new Point(280, 9) };
-            btnClear.Click += (s, e) => _log.Clear();
-            var btnQuit = new Button { Text = "退出", AutoSize = true, Location = new Point(400, 9) };
-            btnQuit.Click += (s, e) => Close();
+            _btnClear = new Button { AutoSize = true, Location = new Point(280, 9) };
+            _btnClear.Click += (s, e) => _log.Clear();
+            _btnQuit = new Button { AutoSize = true, Location = new Point(400, 9) };
+            _btnQuit.Click += (s, e) => Close();
             _chkDesktop = new CheckBox
             {
-                Text = "同时创建桌面快捷方式",
                 AutoSize = true,
                 Checked = _opt.AddDesktop,
-                Location = new Point(490, 12)
+                Location = new Point(470, 12)
             };
-            bottom.Controls.Add(btnOpen);
-            bottom.Controls.Add(btnApps);
-            bottom.Controls.Add(btnClear);
-            bottom.Controls.Add(btnQuit);
+            _langCombo = new ComboBox
+            {
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Location = new Point(640, 9),
+                Width = 92
+            };
+            _langCombo.Items.Add("中文");
+            _langCombo.Items.Add("English");
+            _langCombo.SelectedIndex = L10n.Zh ? 0 : 1;
+            _langCombo.SelectedIndexChanged += (s, e) =>
+            {
+                L10n.Zh = _langCombo.SelectedIndex == 0;
+                ApplyUiText();
+            };
+            bottom.Controls.Add(_btnOpen);
+            bottom.Controls.Add(_btnApps);
+            bottom.Controls.Add(_btnClear);
+            bottom.Controls.Add(_btnQuit);
             bottom.Controls.Add(_chkDesktop);
+            bottom.Controls.Add(_langCombo);
 
             Controls.Add(_log);
-            Controls.Add(drop);
+            Controls.Add(_drop);
             Controls.Add(bottom);
             Controls.Add(_status);
+
+            ApplyUiText();
         }
 
         protected override void OnShown(EventArgs e)
@@ -1231,12 +1440,12 @@ namespace PortableDropper
         private void ProcessPaths(string[] paths)
         {
             _opt.AddDesktop = _chkDesktop.Checked;
-            Append("==== 开始处理 " + paths.Length + " 项 ====");
-            _status.Text = "处理中…";
+            Append(L10n.T("startProcessing", paths.Length));
+            _status.Text = L10n.T("statusWorking");
             _engine.RunProcessAsync(paths, () =>
             {
                 if (IsHandleCreated)
-                    BeginInvoke(new Action(() => _status.Text = "处理完成，详见日志"));
+                    BeginInvoke(new Action(() => _status.Text = L10n.T("statusDone")));
             });
         }
 

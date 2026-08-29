@@ -35,6 +35,8 @@ Zero dependencies, no installation.
 
 ## UI
 
+- **Bilingual UI (中文 / English)**: follows the system language; switch anytime from the dropdown
+  at the bottom-right, or force it with `-Lang zh|en`.
 - **Dark/light theme** follows the system (dark title bar on Windows 11).
 - **High-DPI crisp**: PerMonitorV2 DPI awareness + GDI text rendering — sharp on 4K / 150% scaling.
 - Built-in app icon, and a built-in **"Manage registered apps"** window (browse / open folder / uninstall).
@@ -87,6 +89,7 @@ Three equivalent ways (removes the registry entry + Start Menu / desktop shortcu
 | `-KeepFiles` | Keep the app files during uninstall |
 | `-NoShortcut` / `-NoRegister` | Skip the shortcut / skip Apps & features registration |
 | `-AutoPick` | Pick the main exe automatically when several are found |
+| `-Lang <zh\|en>` | UI language (default: follow the system) |
 | `-Log <file>` | Write the log to a file |
 | `-Gui` | Open the window even when arguments are given |
 
