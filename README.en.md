@@ -43,7 +43,8 @@ Zero dependencies, no installation.
 
 ## Usage
 
-1. **Easiest**: drag a folder or archive onto the `PortableDropper.exe` icon. It processes and exits.
+1. **Easiest**: drag a folder or archive onto the `PortableDropper.exe` icon — it also asks the install
+   mode first (Install as new / Update), then processes and exits.
 2. Double-click to open the window, then drop files into the blue drop area (multiple drops OK).
    Tick **"Also create a desktop shortcut"** in the footer to additionally get a desktop shortcut.
    **Every drop first asks the install mode**:

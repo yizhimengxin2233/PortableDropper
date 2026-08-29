@@ -623,14 +623,27 @@ namespace PortableDropper
 
             engine.OnLog += line => { };
 
-            // 批处理模式（拖到 exe 图标）：处理完自动退出
+            // 批处理模式（拖到 exe 图标 / 命令行传路径）
             if (!opt.ShowGui)
             {
+                // 显式指定了安装方式则静默执行；否则逐项弹窗询问（拖到图标也会问）
                 foreach (string item in opt.Items)
                 {
-                    if (opt.UpdateTarget != null) engine.ProcessItemUpdate(item, opt.UpdateTarget);
-                    else if (opt.InstallAsNew) engine.ProcessItemAsNew(item);
-                    else engine.ProcessItem(item);
+                    if (opt.UpdateTarget != null)
+                    {
+                        engine.ProcessItemUpdate(item, opt.UpdateTarget);
+                    }
+                    else if (opt.InstallAsNew)
+                    {
+                        engine.ProcessItemAsNew(item);
+                    }
+                    else
+                    {
+                        string[] d = AskInstallDecision(engine, item);
+                        if (d == null) continue; // 取消 → 跳过
+                        if (d[1] == "U") engine.ProcessItemUpdate(d[0], d[2]);
+                        else engine.ProcessItemAsNew(d[0]);
+                    }
                 }
                 if (opt.LogPath != null)
                 {
@@ -640,6 +653,23 @@ namespace PortableDropper
             }
 
             Application.Run(new MainForm(engine, opt));
+        }
+
+        // 弹窗询问安装方式：返回 [路径, "N"|"U", 更新目标名]；null = 取消
+        internal static string[] AskInstallDecision(Engine engine, string path)
+        {
+            string shortName = "";
+            try { shortName = Path.GetFileName(path.TrimEnd('\\', '/')); } catch { shortName = path; }
+            using (var ask = new InstallModeForm(shortName))
+            {
+                if (ask.ShowDialog() != DialogResult.OK) return null;
+                if (ask.Choice == InstallModeForm.Mode.Fresh) return new[] { path, "N", "" };
+                using (var pick = new UpdateTargetForm(engine.ListRegistered()))
+                {
+                    if (pick.ShowDialog() != DialogResult.OK || pick.SelectedName == null) return null;
+                    return new[] { path, "U", pick.SelectedName };
+                }
+            }
         }
     }
 
@@ -1712,6 +1742,9 @@ namespace PortableDropper
             _langCombo = new ComboBox
             {
                 DropDownStyle = ComboBoxStyle.DropDownList,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Theme.PanelBack,
+                ForeColor = Theme.Text,
                 Anchor = AnchorStyles.Top | AnchorStyles.Right,
                 Location = new Point(600, 50),
                 Width = 92
