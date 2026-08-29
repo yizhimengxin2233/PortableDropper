@@ -151,6 +151,19 @@ namespace PortableDropper
             { "btnRefresh", "Refresh" },
             { "btnClose", "Close" },
             { "confirmUninstall", "Uninstall {0}?\n(This removes the registry entry, shortcuts and the app folder)" },
+            // 安装方式选择窗口
+            { "askModeTitle", "Install mode" },
+            { "askModeHint", "Dropped: {0}\nHow do you want to install it?" },
+            { "btnFresh", "Install as new" },
+            { "btnUpdate", "Update" },
+            { "btnCancel", "Cancel" },
+            { "pickTargetTitle", "Choose the app to update" },
+            { "pickTargetHint", "Registered portable apps — pick the old version to replace:" },
+            { "btnUpdateSel", "Update selected" },
+            { "btnBack", "Back" },
+            { "noRegistered", "(no registered apps to update)" },
+            { "freshInstall", "· Fresh install (as a new app): {0}" },
+            { "userPickedUpdate", "⇄ User chose to update-replace: {0}" },
             // 日志
             { "errNoPath", "✖ Path does not exist: {0}" },
             { "alreadyInTarget", "· Already in the target folder, skipping move: {0}" },
@@ -186,7 +199,11 @@ namespace PortableDropper
             { "delShortcut", "✔ Deleted shortcut: {0}" },
             { "listEmpty", "(no apps registered via PortableDropper)" },
             { "pubDefault", "Portable" },
-            { "lnkDesc", "{0} (portable)" }
+            { "lnkDesc", "{0} (portable)" },
+            { "updateDetected", "⇄ Old version {0} detected — replacing now" },
+            { "updateReplaced", "⇄ Old version replaced; old folder moved to Recycle Bin: {0}" },
+            { "updateRecycleFail", "△ Could not move old folder to Recycle Bin; kept: {0}" },
+            { "updateOutsideSkip", "△ Old version is outside the target folder; cleanup skipped: {0}" }
         };
 
         private static readonly Dictionary<string, string> ZhMap = new Dictionary<string, string>
@@ -253,7 +270,23 @@ namespace PortableDropper
             { "delShortcut", "✔ 已删除快捷方式: {0}" },
             { "listEmpty", "（没有已通过 PortableDropper 注册的应用）" },
             { "pubDefault", "绿色软件" },
-            { "lnkDesc", "{0}（便携版）" }
+            { "lnkDesc", "{0}（便携版）" },
+            { "askModeTitle", "安装方式" },
+            { "askModeHint", "已添加：{0}\n请选择安装方式：" },
+            { "btnFresh", "全新安装" },
+            { "btnUpdate", "更新" },
+            { "btnCancel", "取消" },
+            { "pickTargetTitle", "选择要更新的应用" },
+            { "pickTargetHint", "已注册的便携应用——选择要替换的旧版本：" },
+            { "btnUpdateSel", "更新所选" },
+            { "btnBack", "返回" },
+            { "noRegistered", "（没有已注册的应用可更新）" },
+            { "freshInstall", "· 全新安装（作为新应用）: {0}" },
+            { "userPickedUpdate", "⇄ 用户选择更新替换: {0}" },
+            { "updateDetected", "⇄ 检测到旧版本 {0}，执行更新替换" },
+            { "updateReplaced", "⇄ 旧版本已替换，旧文件夹已移入回收站: {0}" },
+            { "updateRecycleFail", "△ 旧文件夹未能移入回收站，已保留: {0}" },
+            { "updateOutsideSkip", "△ 旧版本位置不在目标目录内，跳过清理: {0}" }
         };
     }
 
@@ -320,6 +353,125 @@ namespace PortableDropper
             if (chosen && _list.SelectedIndex >= 0) SelectedPath = _exes[_list.SelectedIndex];
             DialogResult = chosen && SelectedPath != null ? DialogResult.OK : DialogResult.Cancel;
             Close();
+        }
+    }
+
+    // ------------------------------------------------------------
+    //  安装方式选择窗口（每次拖入都会询问）
+    // ------------------------------------------------------------
+    internal class InstallModeForm : Form
+    {
+        public enum Mode { Fresh, Update, Cancel }
+        public Mode Choice { get; private set; }
+
+        public InstallModeForm(string itemName)
+        {
+            Text = L10n.T("askModeTitle");
+            Width = 500;
+            Height = 210;
+            MinimumSize = new Size(420, 180);
+            StartPosition = FormStartPosition.CenterScreen;
+            BackColor = Theme.Back;
+            ForeColor = Theme.Text;
+
+            var lbl = new Label
+            {
+                Text = L10n.T("askModeHint", itemName),
+                Dock = DockStyle.Top,
+                Height = 60,
+                Padding = new Padding(14, 14, 0, 0),
+                AutoSize = false
+            };
+
+            var bottom = new Panel { Dock = DockStyle.Bottom, Height = 52 };
+            var btnFresh = new Button { Text = L10n.T("btnFresh"), AutoSize = true, Location = new Point(24, 12) };
+            btnFresh.Click += (s, e) => { Choice = Mode.Fresh; DialogResult = DialogResult.OK; Close(); };
+            var btnUpdate = new Button { Text = L10n.T("btnUpdate"), AutoSize = true, Location = new Point(150, 12) };
+            btnUpdate.Click += (s, e) => { Choice = Mode.Update; DialogResult = DialogResult.OK; Close(); };
+            var btnCancel = new Button { Text = L10n.T("btnCancel"), AutoSize = true, Location = new Point(240, 12) };
+            btnCancel.Click += (s, e) => { Choice = Mode.Cancel; DialogResult = DialogResult.Cancel; Close(); };
+            bottom.Controls.Add(btnFresh);
+            bottom.Controls.Add(btnUpdate);
+            bottom.Controls.Add(btnCancel);
+
+            Controls.Add(lbl);
+            Controls.Add(bottom);
+        }
+    }
+
+    // ------------------------------------------------------------
+    //  更新目标选择窗口（列出已注册应用，挑一个替换）
+    // ------------------------------------------------------------
+    internal class UpdateTargetForm : Form
+    {
+        private readonly ListView _list;
+        public string SelectedName { get; private set; }
+
+        public UpdateTargetForm(List<string[]> rows)
+        {
+            Text = L10n.T("pickTargetTitle");
+            Width = 640;
+            Height = 420;
+            MinimumSize = new Size(520, 300);
+            StartPosition = FormStartPosition.CenterScreen;
+            BackColor = Theme.Back;
+            ForeColor = Theme.Text;
+
+            var lbl = new Label
+            {
+                Text = L10n.T("pickTargetHint"),
+                Dock = DockStyle.Top,
+                Height = 36,
+                Padding = new Padding(12, 8, 0, 0),
+                AutoSize = false
+            };
+
+            _list = new ListView
+            {
+                Dock = DockStyle.Fill,
+                View = View.Details,
+                FullRowSelect = true,
+                BorderStyle = BorderStyle.None,
+                BackColor = Theme.PanelBack,
+                ForeColor = Theme.Text
+            };
+            _list.Columns.Add(L10n.T("colName"), 180);
+            _list.Columns.Add(L10n.T("colVersion"), 90);
+            _list.Columns.Add(L10n.T("colPublisher"), 130);
+            _list.Columns.Add(L10n.T("colLocation"), 220);
+            foreach (string[] r in rows)
+            {
+                var it = new ListViewItem(r[0]);
+                it.SubItems.Add(r[1]);
+                it.SubItems.Add(r[2]);
+                it.SubItems.Add(r[3]);
+                _list.Items.Add(it);
+            }
+            _list.DoubleClick += (s, e) => Finish();
+
+            var bottom = new Panel { Dock = DockStyle.Bottom, Height = 50 };
+            var btn = new Button { Text = L10n.T("btnUpdateSel"), AutoSize = true, Location = new Point(16, 12) };
+            btn.Click += (s, e) => Finish();
+            btn.Enabled = rows.Count > 0;
+            var btnBack = new Button { Text = L10n.T("btnBack"), AutoSize = true, Location = new Point(160, 12) };
+            btnBack.Click += (s, e) => { DialogResult = DialogResult.Cancel; Close(); };
+            bottom.Controls.Add(btn);
+            bottom.Controls.Add(btnBack);
+
+            Controls.Add(_list);
+            Controls.Add(lbl);
+            Controls.Add(bottom);
+            AcceptButton = btn;
+        }
+
+        private void Finish()
+        {
+            if (_list.SelectedItems.Count > 0)
+            {
+                SelectedName = _list.SelectedItems[0].Text;
+                DialogResult = DialogResult.OK;
+                Close();
+            }
         }
     }
 
@@ -476,7 +628,9 @@ namespace PortableDropper
             {
                 foreach (string item in opt.Items)
                 {
-                    engine.ProcessItem(item);
+                    if (opt.UpdateTarget != null) engine.ProcessItemUpdate(item, opt.UpdateTarget);
+                    else if (opt.InstallAsNew) engine.ProcessItemAsNew(item);
+                    else engine.ProcessItem(item);
                 }
                 if (opt.LogPath != null)
                 {
@@ -503,6 +657,9 @@ namespace PortableDropper
         public bool AddDesktop;      // 额外创建桌面快捷方式
         public bool AutoPick;        // 多个 exe 时不弹窗，直接取启发式结果
         public bool KeepFiles;       // 卸载时保留文件
+        public bool KeepOld;         // 更新时保留旧版本（并存，不替换）
+        public bool InstallAsNew;    // -InstallAsNew：全新安装（不自动替换同名）
+        public string UpdateTarget;  // -UpdateTarget <名称>：更新替换该已注册应用
         public bool ListMode;        // -List
         public string UninstallName; // -Uninstall <名称>
         public string DesktopPath = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
@@ -522,6 +679,9 @@ namespace PortableDropper
                 else if (a.Equals("-Desktop", StringComparison.OrdinalIgnoreCase)) o.AddDesktop = true;
                 else if (a.Equals("-AutoPick", StringComparison.OrdinalIgnoreCase)) o.AutoPick = true;
                 else if (a.Equals("-KeepFiles", StringComparison.OrdinalIgnoreCase)) o.KeepFiles = true;
+                else if (a.Equals("-KeepOld", StringComparison.OrdinalIgnoreCase)) o.KeepOld = true;
+                else if (a.Equals("-InstallAsNew", StringComparison.OrdinalIgnoreCase)) o.InstallAsNew = true;
+                else if (a.Equals("-UpdateTarget", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length) o.UpdateTarget = args[++i];
                 else if (a.Equals("-List", StringComparison.OrdinalIgnoreCase)) o.ListMode = true;
                 else if (a.Equals("-Gui", StringComparison.OrdinalIgnoreCase)) o.ShowGui = true;
                 else if (a.Equals("-Uninstall", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length) o.UninstallName = args[++i];
@@ -575,10 +735,44 @@ namespace PortableDropper
             bw.RunWorkerAsync();
         }
 
+        // GUI 拖入：每个项目带安装方式决策 [原始路径, 模式, 更新目标名称]
+        // 模式 "U" = 更新替换（选中的已注册应用）；"N" = 全新安装
+        public void RunProcessAsync(List<string[]> decisions, Action done)
+        {
+            var bw = new BackgroundWorker();
+            bw.DoWork += (s, e) =>
+            {
+                foreach (string[] d in decisions)
+                {
+                    if (d != null && d.Length >= 3 && d[1] == "U") ProcessItemUpdate(d[0], d[2]);
+                    else ProcessItemAsNew(d[0]);
+                }
+            };
+            bw.RunWorkerCompleted += (s, e) => { Action d = done; if (d != null) d(); };
+            bw.RunWorkerAsync();
+        }
+
         // --------------------------------------------------------
         //  处理单个拖入项
         // --------------------------------------------------------
         public void ProcessItem(string raw)
+        {
+            ProcessWithMode(raw, null, false);
+        }
+
+        // 更新替换：替换用户指定的已注册应用
+        public void ProcessItemUpdate(string raw, string updateClean)
+        {
+            ProcessWithMode(raw, updateClean, false);
+        }
+
+        // 全新安装：作为新应用，不自动替换同名旧版
+        public void ProcessItemAsNew(string raw)
+        {
+            ProcessWithMode(raw, null, true);
+        }
+
+        private void ProcessWithMode(string raw, string updateClean, bool asNew)
         {
             try
             {
@@ -599,13 +793,13 @@ namespace PortableDropper
                             StringComparison.OrdinalIgnoreCase))
                     {
                         AddLog(L10n.T("alreadyInTarget", name));
-                        TryShortcut(full, name, null);
+                        TryShortcut(full, name, null, updateClean, asNew);
                         return;
                     }
                     string target = UniquePath(Path.Combine(Opt.Destination, name));
                     MoveDirectory(full, target);
                     AddLog(L10n.T("movedDir", target));
-                    TryShortcut(target, name, null);
+                    TryShortcut(target, name, null, updateClean, asNew);
                     return;
                 }
 
@@ -627,7 +821,7 @@ namespace PortableDropper
                         if (Recycle(full)) AddLog(L10n.T("recycled"));
                         else AddLog(L10n.T("recycleFailed", full));
                     }
-                    TryShortcut(target, appName, null);
+                    TryShortcut(target, appName, null, updateClean, asNew);
                     return;
                 }
 
@@ -636,7 +830,7 @@ namespace PortableDropper
                 MoveFile(full, dest);
                 AddLog(L10n.T("movedFile", dest));
                 if (ext.Equals(".exe", StringComparison.OrdinalIgnoreCase))
-                    TryShortcut(Path.GetDirectoryName(dest), Path.GetFileNameWithoutExtension(name), dest);
+                    TryShortcut(Path.GetDirectoryName(dest), Path.GetFileNameWithoutExtension(name), dest, updateClean, asNew);
             }
             catch (Exception ex)
             {
@@ -753,7 +947,7 @@ namespace PortableDropper
         // --------------------------------------------------------
         //  快捷方式 + 「应用和功能」注册
         // --------------------------------------------------------
-        private void TryShortcut(string dir, string appName, string knownExe)
+        private void TryShortcut(string dir, string appName, string knownExe, string updateClean, bool asNew)
         {
             if (Opt.NoShortcut) return;
             try
@@ -769,10 +963,11 @@ namespace PortableDropper
                     if (root.Count > 0) candidates = root;
                     else
                     {
-                        List<string> sub = RecursiveExes(dir, appName);
+                        List<string> sub = RecursiveExes(dir, updateClean != null ? updateClean : appName);
                         if (sub.Count > 0) candidates = sub;
                         else candidates = NonExeCandidates(dir);
                     }
+                    if (candidates.Count == 0) candidates = RecursiveAnyExes(dir);
                 }
 
                 if (candidates.Count == 0)
@@ -807,9 +1002,29 @@ namespace PortableDropper
                     AddLog(L10n.T("pickedManual", Path.GetFileName(exe)));
                 }
 
-                string clean = CleanName(appName);
+                // clean：更新替换用用户选定的名称；否则从包名清理
+                string clean = updateClean != null ? updateClean : CleanName(appName);
+
+                if (updateClean != null)
+                {
+                    AddLog(L10n.T("userPickedUpdate", updateClean));
+                    ReplaceExisting(clean, dir);
+                }
+                else if (asNew || Opt.KeepOld)
+                {
+                    AddLog(L10n.T("freshInstall", clean));
+                }
+                else
+                {
+                    // 批处理默认：自动检测同名旧版本并替换
+                    ReplaceExisting(clean, dir);
+                }
+
                 Directory.CreateDirectory(Opt.StartMenuFolder);
-                string lnk = UniquePath(Path.Combine(Opt.StartMenuFolder, clean + ".lnk"));
+                // 更新/批处理替换：原位覆盖同一快捷方式；全新安装或 -KeepOld：递增 (2) 命名
+                string lnk = (asNew || Opt.KeepOld)
+                    ? UniquePath(Path.Combine(Opt.StartMenuFolder, clean + ".lnk"))
+                    : Path.Combine(Opt.StartMenuFolder, clean + ".lnk");
                 CreateLnk(lnk, exe, clean);
                 AddLog(L10n.T("shortcut", lnk, Path.GetFileName(exe)));
 
@@ -818,7 +1033,9 @@ namespace PortableDropper
                     try
                     {
                         Directory.CreateDirectory(Opt.DesktopPath);
-                        string dlnk = UniquePath(Path.Combine(Opt.DesktopPath, clean + ".lnk"));
+                        string dlnk = (asNew || Opt.KeepOld)
+                            ? UniquePath(Path.Combine(Opt.DesktopPath, clean + ".lnk"))
+                            : Path.Combine(Opt.DesktopPath, clean + ".lnk");
                         CreateLnk(dlnk, exe, clean);
                         AddLog(L10n.T("desktopShortcut", dlnk));
                     }
@@ -828,7 +1045,7 @@ namespace PortableDropper
                     }
                 }
 
-                RegisterAppsAndFeatures(exe, dir, appName);
+                RegisterAppsAndFeatures(exe, dir, clean, asNew || Opt.KeepOld);
             }
             catch (Exception ex)
             {
@@ -849,13 +1066,12 @@ namespace PortableDropper
         }
 
         // 注册到 Windows「应用和功能」列表（HKCU，无需管理员）
-        private void RegisterAppsAndFeatures(string exe, string dir, string appName)
+        private void RegisterAppsAndFeatures(string exe, string dir, string clean, bool uniqueKey)
         {
             if (Opt.NoRegister) return;
             try
             {
-                string clean = CleanName(appName);
-                string keyPath = UninstallRoot + "\\" + UniqueKeyName(clean);
+                string keyPath = UninstallRoot + "\\" + (uniqueKey ? UniqueKeyName(clean) : clean);
                 string self = Application.ExecutablePath;
 
                 FileVersionInfo vi = FileVersionInfo.GetVersionInfo(exe);
@@ -888,17 +1104,90 @@ namespace PortableDropper
         }
 
         // --------------------------------------------------------
-        //  卸载（-Uninstall <名称> / 管理窗口）
+        //  更新替换：检测到同名（清理后缀后）旧版本 → 替换
+        // --------------------------------------------------------
+        private void ReplaceExisting(string clean, string newDir)
+        {
+            if (Opt.KeepOld) return;
+            var keys = new List<string>();
+            var oldLocs = new List<string>();
+            using (RegistryKey root = Registry.CurrentUser.OpenSubKey(UninstallRoot))
+            {
+                if (root == null) return;
+                foreach (string sub in root.GetSubKeyNames())
+                {
+                    using (RegistryKey k = root.OpenSubKey(sub))
+                    {
+                        if (k == null) continue;
+                        object pd = k.GetValue("PortableDropper");
+                        if (pd == null || (int)pd != 1) continue;
+                        object dn = k.GetValue("DisplayName");
+                        string d = dn == null ? sub : dn.ToString();
+                        if (!string.Equals(CleanName(d), clean, StringComparison.OrdinalIgnoreCase)) continue;
+                        keys.Add(sub);
+                        object il = k.GetValue("InstallLocation");
+                        if (il != null) oldLocs.Add(il.ToString());
+                    }
+                }
+            }
+            if (keys.Count == 0) return;
+            AddLog(L10n.T("updateDetected", clean));
+            foreach (string key in keys)
+            {
+                try
+                {
+                    using (RegistryKey root = Registry.CurrentUser.OpenSubKey(UninstallRoot, true))
+                    {
+                        if (root != null) root.DeleteSubKeyTree(key, false);
+                    }
+                }
+                catch { }
+            }
+            DeleteShortcutsNamed(clean);
+            foreach (string loc in oldLocs)
+            {
+                if (!Directory.Exists(loc)) continue;
+                string locRoot = loc.TrimEnd('\\');
+                string newRoot = newDir.TrimEnd('\\');
+                if (string.Equals(locRoot, Opt.Destination.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(locRoot, newRoot, StringComparison.OrdinalIgnoreCase)) continue;
+                string parent = Path.GetDirectoryName(locRoot);
+                if (parent == null ||
+                    !string.Equals(parent.TrimEnd('\\'), Opt.Destination.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
+                {
+                    AddLog(L10n.T("updateOutsideSkip", loc));
+                    continue;
+                }
+                if (RecycleDirectory(loc)) AddLog(L10n.T("updateReplaced", loc));
+                else AddLog(L10n.T("updateRecycleFail", loc));
+            }
+        }
+
+        // 旧文件夹移入回收站（可恢复，非永久删除）
+        private static bool RecycleDirectory(string path)
+        {
+            try
+            {
+                Microsoft.VisualBasic.FileIO.FileSystem.DeleteDirectory(path,
+                    Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs,
+                    Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        // --------------------------------------------------------
+        //  卸载（-Uninstall <名称> / 管理窗口）— 循环清理所有重名条目
         // --------------------------------------------------------
         public void UninstallApp(string name)
         {
             try
             {
-                string matchKey = null;
-                string disp = name;
-                string installLoc = null;
-                string exe = null;
-
+                string clean = CleanName(name);
+                var matches = new List<string[]>();
                 using (RegistryKey root = Registry.CurrentUser.OpenSubKey(UninstallRoot))
                 {
                     if (root == null)
@@ -916,53 +1205,54 @@ namespace PortableDropper
                             object dn = k.GetValue("DisplayName");
                             string d = dn == null ? sub : dn.ToString();
                             if (string.Equals(d, name, StringComparison.OrdinalIgnoreCase) ||
-                                string.Equals(CleanName(d), CleanName(name), StringComparison.OrdinalIgnoreCase))
+                                string.Equals(CleanName(d), clean, StringComparison.OrdinalIgnoreCase))
                             {
-                                matchKey = sub;
-                                disp = d;
                                 object il = k.GetValue("InstallLocation");
-                                if (il != null && Directory.Exists(il.ToString())) installLoc = il.ToString();
+                                string loc = (il != null && Directory.Exists(il.ToString())) ? il.ToString() : "";
                                 object ic = k.GetValue("DisplayIcon");
-                                if (ic != null) exe = ic.ToString();
-                                break;
+                                matches.Add(new[] { sub, d, loc, ic == null ? "" : ic.ToString() });
                             }
                         }
                     }
                 }
 
-                if (matchKey == null)
+                if (matches.Count == 0)
                 {
                     AddLog(L10n.T("uninstNotFound", name));
                     return;
                 }
 
-                using (RegistryKey root = Registry.CurrentUser.OpenSubKey(UninstallRoot, true))
+                // 快捷方式（开始菜单 + (2) 后缀 + 桌面）
+                DeleteShortcutsNamed(clean);
+                foreach (string[] m in matches)
                 {
-                    if (root != null) root.DeleteSubKeyTree(matchKey, false);
-                }
-                AddLog(L10n.T("uninstRemoved", disp));
+                    string key = m[0], disp = m[1], loc = m[2], exe = m[3];
+                    try
+                    {
+                        using (RegistryKey root = Registry.CurrentUser.OpenSubKey(UninstallRoot, true))
+                        {
+                            if (root != null) root.DeleteSubKeyTree(key, false);
+                        }
+                    }
+                    catch { }
+                    AddLog(L10n.T("uninstRemoved", disp));
+                    try
+                    {
+                        string de = Path.Combine(Opt.DesktopPath, clean + ".lnk");
+                        if (File.Exists(de)) { File.Delete(de); AddLog(L10n.T("delDesktopShortcut", de)); }
+                    }
+                    catch { }
 
-                // 快捷方式（开始菜单 + 可能的 (2) 后缀 + 桌面）
-                DeleteShortcutsNamed(CleanName(disp));
-                try
-                {
-                    string de = Path.Combine(Opt.DesktopPath, CleanName(disp) + ".lnk");
-                    if (File.Exists(de)) { File.Delete(de); AddLog(L10n.T("delDesktopShortcut", de)); }
-                }
-                catch { }
-
-                // 文件夹 / 单文件
-                if (installLoc != null)
-                {
-                    bool isRoot = string.Equals(installLoc.TrimEnd('\\'), Opt.Destination.TrimEnd('\\'),
+                    if (loc.Length == 0) continue;
+                    bool isRoot = string.Equals(loc.TrimEnd('\\'), Opt.Destination.TrimEnd('\\'),
                         StringComparison.OrdinalIgnoreCase);
                     if (Opt.KeepFiles)
                     {
-                        AddLog(L10n.T("keepFiles", installLoc));
+                        AddLog(L10n.T("keepFiles", loc));
                     }
                     else if (isRoot)
                     {
-                        if (exe != null && File.Exists(exe) &&
+                        if (exe.Length > 0 && File.Exists(exe) &&
                             string.Equals(Path.GetDirectoryName(exe).TrimEnd('\\'),
                                 Opt.Destination.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
                         {
@@ -973,14 +1263,14 @@ namespace PortableDropper
                     }
                     else
                     {
-                        string parent = Path.GetDirectoryName(installLoc.TrimEnd('\\'));
+                        string parent = Path.GetDirectoryName(loc.TrimEnd('\\'));
                         if (parent != null && string.Equals(parent.TrimEnd('\\'),
                                 Opt.Destination.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
                         {
-                            Directory.Delete(installLoc, true);
-                            AddLog(L10n.T("deletedFolder", installLoc));
+                            Directory.Delete(loc, true);
+                            AddLog(L10n.T("deletedFolder", loc));
                         }
-                        else AddLog(L10n.T("skipFolderDel", installLoc));
+                        else AddLog(L10n.T("skipFolderDel", loc));
                     }
                 }
             }
@@ -1051,6 +1341,22 @@ namespace PortableDropper
         // --------------------------------------------------------
         //  候选查找
         // --------------------------------------------------------
+        // 兜底：更新/找不到关联 exe 时，接受目录里任意非安装类可执行文件（最短路径优先）
+        private static List<string> RecursiveAnyExes(string dir)
+        {
+            try
+            {
+                return Directory.GetFiles(dir, "*.exe", SearchOption.AllDirectories)
+                    .Where(f => !BadExe.IsMatch(Path.GetFileNameWithoutExtension(f)))
+                    .OrderBy(f => f.Length)
+                    .ToList();
+            }
+            catch
+            {
+                return new List<string>();
+            }
+        }
+
         private static List<string> RootExes(string dir)
         {
             try
@@ -1442,9 +1748,35 @@ namespace PortableDropper
         private void ProcessPaths(string[] paths)
         {
             _opt.AddDesktop = _chkDesktop.Checked;
-            Append(L10n.T("startProcessing", paths.Length));
+            var decisions = new List<string[]>();
+            foreach (string p in paths)
+            {
+                using (var ask = new InstallModeForm(Path.GetFileName(p.TrimEnd('\\', '/'))))
+                {
+                    if (ask.ShowDialog(this) != DialogResult.OK) continue; // 取消 → 跳过该项
+                    if (ask.Choice == InstallModeForm.Mode.Fresh)
+                    {
+                        decisions.Add(new[] { p, "N", "" });
+                        continue;
+                    }
+                    if (ask.Choice == InstallModeForm.Mode.Update)
+                    {
+                        using (var pick = new UpdateTargetForm(_engine.ListRegistered()))
+                        {
+                            if (pick.ShowDialog(this) != DialogResult.OK || pick.SelectedName == null) continue;
+                            decisions.Add(new[] { p, "U", pick.SelectedName });
+                        }
+                    }
+                }
+            }
+            if (decisions.Count == 0)
+            {
+                Append(L10n.T("pickCancelled", ""));
+                return;
+            }
+            Append(L10n.T("startProcessing", decisions.Count));
             _status.Text = L10n.T("statusWorking");
-            _engine.RunProcessAsync(paths, () =>
+            _engine.RunProcessAsync(decisions, () =>
             {
                 if (IsHandleCreated)
                     BeginInvoke(new Action(() => _status.Text = L10n.T("statusDone")));

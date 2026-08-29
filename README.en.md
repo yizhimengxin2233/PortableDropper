@@ -46,6 +46,12 @@ Zero dependencies, no installation.
 1. **Easiest**: drag a folder or archive onto the `PortableDropper.exe` icon. It processes and exits.
 2. Double-click to open the window, then drop files into the blue drop area (multiple drops OK).
    Tick **"Also create a desktop shortcut"** in the footer to additionally get a desktop shortcut.
+   **Every drop first asks the install mode**:
+   - **Install as new** → installs it as an independent new app;
+   - **Update** → shows the list of registered apps; pick the old version to replace,
+     the old folder goes to the Recycle Bin and the shortcut + registry entry are updated in place
+     (no guessing about versions — you decide);
+   - **Cancel** → skips that item.
 3. Command line (batch / automation):
    ```
    PortableDropper.exe -List                       List registered apps
@@ -66,6 +72,13 @@ Zero dependencies, no installation.
 - **"Apps & features" registration**: writes a per-user uninstall entry (HKCU);
   its Uninstall button invokes this program's `-Uninstall` for a clean removal.
 - **Name collisions**: folders / shortcuts / registry entries get a ` (2)` suffix — never overwritten.
+- **Update replacement** → **you decide in the GUI** (every drop asks "Install as new / Update";
+  choosing Update shows the registered-apps list, pick the old version to replace,
+  the old folder moves to the Recycle Bin and the shortcut + registry entry are updated in place);
+  command-line mode **auto-replaces the same name** by default (`-UpdateTarget <name>` picks the
+  target explicitly, `-InstallAsNew` forces a side-by-side fresh install, `-KeepOld` keeps the old one).
+- **Uninstall clears duplicates** → `-Uninstall "Name"` removes **all** matching entries in one run
+  (including legacy ` (2)` ones).
 - **Cross-drive drops**: automatically fall back to copy-then-delete, same net result.
 
 ## Uninstall
@@ -74,7 +87,8 @@ Three equivalent ways (removes the registry entry + Start Menu / desktop shortcu
 
 - Settings → Apps → Apps & features → find the app → **Uninstall** (invokes this program)
 - Main window → **Manage registered apps** → select → **Uninstall selected**
-- CLI: `PortableDropper.exe -Uninstall "Name"` (add `-KeepFiles` to keep the files)
+- CLI: `PortableDropper.exe -Uninstall "Name"` (add `-KeepFiles` to keep the files;
+  side-by-side duplicate entries are all removed in one run)
 
 ## Command-line options
 
@@ -87,8 +101,11 @@ Three equivalent ways (removes the registry entry + Start Menu / desktop shortcu
 | `-List` | List registered apps (combine with `-Log <file>` to write to a file) |
 | `-Keep` | Keep the original archive after extraction |
 | `-KeepFiles` | Keep the app files during uninstall |
+| `-KeepOld` | On update, keep the old version side-by-side (no replace) |
 | `-NoShortcut` / `-NoRegister` | Skip the shortcut / skip Apps & features registration |
 | `-AutoPick` | Pick the main exe automatically when several are found |
+| `-InstallAsNew` | Install as a new app (no auto-replace of a same-name old version) |
+| `-UpdateTarget <name>` | Update-replace the given registered app (old folder to Recycle Bin, shortcut/registry updated in place) |
 | `-Lang <zh\|en>` | UI language (default: follow the system) |
 | `-Log <file>` | Write the log to a file |
 | `-Gui` | Open the window even when arguments are given |
