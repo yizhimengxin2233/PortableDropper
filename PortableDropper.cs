@@ -131,6 +131,7 @@ namespace PortableDropper
             { "btnClearLog", "Clear log" },
             { "btnQuit", "Exit" },
             { "chkDesktop", "Also create a desktop shortcut" },
+            { "langLabel", "Language:" },
             { "statusTarget", "Target folder: {0}" },
             { "statusWorking", "Working…" },
             { "statusDone", "Done — see log below" },
@@ -218,6 +219,7 @@ namespace PortableDropper
             { "btnClearLog", "清空日志" },
             { "btnQuit", "退出" },
             { "chkDesktop", "同时创建桌面快捷方式" },
+            { "langLabel", "语言:" },
             { "statusTarget", "目标目录: {0}" },
             { "statusWorking", "处理中…" },
             { "statusDone", "处理完成，详见日志" },
@@ -1623,8 +1625,8 @@ namespace PortableDropper
         private TextBox _log;
         private Label _status;
         private CheckBox _chkDesktop;
-        private ComboBox _langCombo;
         private Panel _drop;
+        private Label _langLabel;
         private Button _btnOpen;
         private Button _btnApps;
         private Button _btnClear;
@@ -1651,6 +1653,7 @@ namespace PortableDropper
             _btnClear.Text = L10n.T("btnClearLog");
             _btnQuit.Text = L10n.T("btnQuit");
             _chkDesktop.Text = L10n.T("chkDesktop");
+            _langLabel.Text = L10n.T("langLabel");
             _status.Text = L10n.T("statusTarget", _opt.Destination);
             _drop.Invalidate();
         }
@@ -1670,6 +1673,52 @@ namespace PortableDropper
                 if (IsHandleCreated) BeginInvoke(new Action(() => Append(line)));
                 else Append(line);
             };
+
+            // 顶部语言栏（醒目，一眼可见）
+            var langBar = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 34,
+                BackColor = Theme.PanelBack
+            };
+            // 语言栏用 FlowLayout 自动排布：中英文标签长度不同也不会重叠
+            var langFlow = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                Padding = new Padding(12, 6, 0, 0),
+                BackColor = Theme.PanelBack
+            };
+            _langLabel = new Label
+            {
+                Text = L10n.T("langLabel"),
+                AutoSize = true,
+                Margin = new Padding(0, 4, 4, 0),
+                ForeColor = Theme.Text
+            };
+            var rbZh = new RadioButton
+            {
+                Text = "中文",
+                AutoSize = true,
+                Checked = L10n.Zh,
+                Margin = new Padding(4, 2, 0, 0),
+                ForeColor = Theme.Text
+            };
+            var rbEn = new RadioButton
+            {
+                Text = "English",
+                AutoSize = true,
+                Checked = !L10n.Zh,
+                Margin = new Padding(8, 2, 0, 0),
+                ForeColor = Theme.Text
+            };
+            rbZh.CheckedChanged += (s, e) => { if (rbZh.Checked) { L10n.Zh = true; ApplyUiText(); } };
+            rbEn.CheckedChanged += (s, e) => { if (rbEn.Checked) { L10n.Zh = false; ApplyUiText(); } };
+            langFlow.Controls.Add(_langLabel);
+            langFlow.Controls.Add(rbZh);
+            langFlow.Controls.Add(rbEn);
+            langBar.Controls.Add(langFlow);
 
             _drop = new Panel
             {
@@ -1720,50 +1769,54 @@ namespace PortableDropper
                 Height = 22
             };
 
-            var bottom = new Panel { Dock = DockStyle.Bottom, Height = 76 };
-            _btnOpen = new Button { AutoSize = true, Location = new Point(10, 9) };
+            var bottom = new Panel { Dock = DockStyle.Bottom, Height = 80, BackColor = Theme.Back };
+            // 底部也用 FlowLayout 自动排布两行，中英文长度不同不互相挤压
+            var row1 = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                Height = 44,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                Padding = new Padding(8, 4, 0, 0),
+                BackColor = Theme.Back
+            };
+            _btnOpen = new Button { AutoSize = true, Margin = new Padding(4, 6, 0, 0) };
             _btnOpen.Click += (s, e) => { try { Process.Start("explorer.exe", _opt.Destination); } catch { } };
-            _btnApps = new Button { AutoSize = true, Location = new Point(140, 9) };
+            _btnApps = new Button { AutoSize = true, Margin = new Padding(6, 6, 0, 0) };
             _btnApps.Click += (s, e) =>
             {
                 using (var f = new AppsListForm(_engine)) { f.ShowDialog(this); }
             };
-            _btnClear = new Button { AutoSize = true, Location = new Point(280, 9) };
+            _btnClear = new Button { AutoSize = true, Margin = new Padding(6, 6, 0, 0) };
             _btnClear.Click += (s, e) => _log.Clear();
-            _btnQuit = new Button { AutoSize = true, Location = new Point(400, 9) };
+            _btnQuit = new Button { AutoSize = true, Margin = new Padding(6, 6, 0, 0) };
             _btnQuit.Click += (s, e) => Close();
-            // 第二行：左侧桌面快捷方式勾选，右侧语言切换（右侧锚定，避免与文字重叠）
+            row1.Controls.Add(_btnOpen);
+            row1.Controls.Add(_btnApps);
+            row1.Controls.Add(_btnClear);
+            row1.Controls.Add(_btnQuit);
+            // 第二行：桌面快捷方式勾选
+            var row2 = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                Height = 36,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                Padding = new Padding(10, 4, 0, 0),
+                BackColor = Theme.Back
+            };
             _chkDesktop = new CheckBox
             {
                 AutoSize = true,
                 Checked = _opt.AddDesktop,
-                Location = new Point(10, 50)
+                Margin = new Padding(0, 4, 0, 0),
+                ForeColor = Theme.Text
             };
-            _langCombo = new ComboBox
-            {
-                DropDownStyle = ComboBoxStyle.DropDownList,
-                FlatStyle = FlatStyle.Flat,
-                BackColor = Theme.PanelBack,
-                ForeColor = Theme.Text,
-                Anchor = AnchorStyles.Top | AnchorStyles.Right,
-                Location = new Point(600, 50),
-                Width = 92
-            };
-            _langCombo.Items.Add("中文");
-            _langCombo.Items.Add("English");
-            _langCombo.SelectedIndex = L10n.Zh ? 0 : 1;
-            _langCombo.SelectedIndexChanged += (s, e) =>
-            {
-                L10n.Zh = _langCombo.SelectedIndex == 0;
-                ApplyUiText();
-            };
-            bottom.Controls.Add(_btnOpen);
-            bottom.Controls.Add(_btnApps);
-            bottom.Controls.Add(_btnClear);
-            bottom.Controls.Add(_btnQuit);
-            bottom.Controls.Add(_chkDesktop);
-            bottom.Controls.Add(_langCombo);
+            row2.Controls.Add(_chkDesktop);
+            bottom.Controls.Add(row1);
+            bottom.Controls.Add(row2);
 
+            Controls.Add(langBar);
             Controls.Add(_log);
             Controls.Add(_drop);
             Controls.Add(bottom);
