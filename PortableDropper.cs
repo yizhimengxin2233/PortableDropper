@@ -366,13 +366,22 @@ namespace PortableDropper
             _list.Items.AddRange(exes.Select(p => Path.GetFileName(p)).ToArray());
             _list.SelectedIndex = Math.Max(0, exes.IndexOf(defaultPath));
 
-            var bottom = new Panel { Dock = DockStyle.Bottom, Height = 50 };
-            var ok = new Button { Text = L10n.T("btnOk"), AutoSize = true, Location = new Point(160, 12) };
+            var bottom = new Panel { Dock = DockStyle.Bottom, Height = 50, BackColor = Theme.Back };
+            var flow = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                Padding = new Padding(8, 10, 0, 0),
+                BackColor = Theme.Back
+            };
+            var ok = new Button { Text = L10n.T("btnOk"), AutoSize = true, Margin = new Padding(0, 2, 6, 0) };
             ok.Click += (s, e) => Finish(true);
-            var skip = new Button { Text = L10n.T("btnSkipShortcut"), AutoSize = true, Location = new Point(248, 12) };
+            var skip = new Button { Text = L10n.T("btnSkipShortcut"), AutoSize = true, Margin = new Padding(6, 2, 0, 0) };
             skip.Click += (s, e) => Finish(false);
-            bottom.Controls.Add(ok);
-            bottom.Controls.Add(skip);
+            flow.Controls.Add(ok);
+            flow.Controls.Add(skip);
+            bottom.Controls.Add(flow);
 
             _list.DoubleClick += (s, e) => Finish(true);
             AcceptButton = ok;
@@ -417,16 +426,26 @@ namespace PortableDropper
                 AutoSize = false
             };
 
-            var bottom = new Panel { Dock = DockStyle.Bottom, Height = 52 };
-            var btnFresh = new Button { Text = L10n.T("btnFresh"), AutoSize = true, Location = new Point(24, 12) };
+            var bottom = new Panel { Dock = DockStyle.Bottom, Height = 50, BackColor = Theme.Back };
+            // FlowLayout 自动排布：英文按钮变长不互相覆盖
+            var flow = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                Padding = new Padding(24, 10, 0, 0),
+                BackColor = Theme.Back
+            };
+            var btnFresh = new Button { Text = L10n.T("btnFresh"), AutoSize = true, Margin = new Padding(0, 2, 6, 0) };
             btnFresh.Click += (s, e) => { Choice = Mode.Fresh; DialogResult = DialogResult.OK; Close(); };
-            var btnUpdate = new Button { Text = L10n.T("btnUpdate"), AutoSize = true, Location = new Point(150, 12) };
+            var btnUpdate = new Button { Text = L10n.T("btnUpdate"), AutoSize = true, Margin = new Padding(6, 2, 0, 0) };
             btnUpdate.Click += (s, e) => { Choice = Mode.Update; DialogResult = DialogResult.OK; Close(); };
-            var btnCancel = new Button { Text = L10n.T("btnCancel"), AutoSize = true, Location = new Point(240, 12) };
+            var btnCancel = new Button { Text = L10n.T("btnCancel"), AutoSize = true, Margin = new Padding(6, 2, 0, 0) };
             btnCancel.Click += (s, e) => { Choice = Mode.Cancel; DialogResult = DialogResult.Cancel; Close(); };
-            bottom.Controls.Add(btnFresh);
-            bottom.Controls.Add(btnUpdate);
-            bottom.Controls.Add(btnCancel);
+            flow.Controls.Add(btnFresh);
+            flow.Controls.Add(btnUpdate);
+            flow.Controls.Add(btnCancel);
+            bottom.Controls.Add(flow);
 
             Controls.Add(lbl);
             Controls.Add(bottom);
@@ -483,14 +502,23 @@ namespace PortableDropper
             }
             _list.DoubleClick += (s, e) => Finish();
 
-            var bottom = new Panel { Dock = DockStyle.Bottom, Height = 50 };
-            var btn = new Button { Text = L10n.T("btnUpdateSel"), AutoSize = true, Location = new Point(16, 12) };
+            var bottom = new Panel { Dock = DockStyle.Bottom, Height = 50, BackColor = Theme.Back };
+            var flow = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                Padding = new Padding(16, 10, 0, 0),
+                BackColor = Theme.Back
+            };
+            var btn = new Button { Text = L10n.T("btnUpdateSel"), AutoSize = true, Margin = new Padding(0, 2, 6, 0) };
             btn.Click += (s, e) => Finish();
             btn.Enabled = rows.Count > 0;
-            var btnBack = new Button { Text = L10n.T("btnBack"), AutoSize = true, Location = new Point(160, 12) };
+            var btnBack = new Button { Text = L10n.T("btnBack"), AutoSize = true, Margin = new Padding(6, 2, 0, 0) };
             btnBack.Click += (s, e) => { DialogResult = DialogResult.Cancel; Close(); };
-            bottom.Controls.Add(btn);
-            bottom.Controls.Add(btnBack);
+            flow.Controls.Add(btn);
+            flow.Controls.Add(btnBack);
+            bottom.Controls.Add(flow);
 
             Controls.Add(_list);
             Controls.Add(lbl);
@@ -543,19 +571,28 @@ namespace PortableDropper
             _list.Columns.Add(L10n.T("colLocation"), 270);
             _list.DoubleClick += (s, e) => OpenSelected();
 
-            var bottom = new Panel { Dock = DockStyle.Bottom, Height = 46 };
-            var btnUn = new Button { Text = L10n.T("btnUninstallSel"), AutoSize = true, Location = new Point(10, 10) };
+            var bottom = new Panel { Dock = DockStyle.Bottom, Height = 46, BackColor = Theme.Back };
+            var flow = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                Padding = new Padding(10, 8, 0, 0),
+                BackColor = Theme.Back
+            };
+            var btnUn = new Button { Text = L10n.T("btnUninstallSel"), AutoSize = true, Margin = new Padding(0, 2, 6, 0) };
             btnUn.Click += (s, e) => UninstallSelected();
-            var btnOpen = new Button { Text = L10n.T("btnOpenFolder"), AutoSize = true, Location = new Point(120, 10) };
+            var btnOpen = new Button { Text = L10n.T("btnOpenFolder"), AutoSize = true, Margin = new Padding(6, 2, 0, 0) };
             btnOpen.Click += (s, e) => OpenSelected();
-            var btnRefresh = new Button { Text = L10n.T("btnRefresh"), AutoSize = true, Location = new Point(210, 10) };
+            var btnRefresh = new Button { Text = L10n.T("btnRefresh"), AutoSize = true, Margin = new Padding(6, 2, 0, 0) };
             btnRefresh.Click += (s, e) => Reload();
-            var btnClose = new Button { Text = L10n.T("btnClose"), AutoSize = true, Location = new Point(280, 10) };
+            var btnClose = new Button { Text = L10n.T("btnClose"), AutoSize = true, Margin = new Padding(6, 2, 0, 0) };
             btnClose.Click += (s, e) => Close();
-            bottom.Controls.Add(btnUn);
-            bottom.Controls.Add(btnOpen);
-            bottom.Controls.Add(btnRefresh);
-            bottom.Controls.Add(btnClose);
+            flow.Controls.Add(btnUn);
+            flow.Controls.Add(btnOpen);
+            flow.Controls.Add(btnRefresh);
+            flow.Controls.Add(btnClose);
+            bottom.Controls.Add(flow);
 
             Controls.Add(_list);
             Controls.Add(bottom);
