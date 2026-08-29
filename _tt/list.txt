@@ -1,4 +1,0 @@
-MyTool | 1.0.0 | 绿色软件 | C:\Users\HatsuneMiku\Documents\deepseek\PortableDropper\_tt\Programs
-ScriptApp | 1.0.0 | 绿色软件 | C:\Users\HatsuneMiku\Documents\deepseek\PortableDropper\_tt\Programs\ScriptApp (2)
-SevenApp | 1.0.0 | 绿色软件 | C:\Users\HatsuneMiku\Documents\deepseek\PortableDropper\_tt\Programs\SevenApp (2)
-TestApp | 1.0.0 | 绿色软件 | C:\Users\HatsuneMiku\Documents\deepseek\PortableDropper\_tt\Programs\TestApp (2)
