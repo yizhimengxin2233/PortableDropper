@@ -1,36 +1,31 @@
-# PortableDropper v1.0.0 — Release Notes
+# PortableDropper v1.1.0 — Release Notes
 
-**由 DeepSeek AI 助手（V4 会话）编写并验证**，基于 C# WinForms，单文件 exe。
+**由 DeepSeek AI 助手（V4 会话）编写并验证**，基于 C# WinForms，单文件 exe，MIT 协议。
 
-## 这是什么
+## 相比 v1.0.0 新增
 
-把绿色软件（文件夹 / 压缩包）直接拖到图标上，自动装入 `%LOCALAPPDATA%\Programs`，
-在开始菜单根目录生成快捷方式；压缩包支持 zip/7z/rar/tar/gz 等，内置 7-Zip 无需安装。
+- **注册到 Windows「应用和功能」列表**：自动写入当前用户卸载表（HKCU），
+  显示名称/版本/发布者/图标/位置/占用大小；「设置 → 应用和功能」里可直接卸载。
+- **内置卸载器**：`-Uninstall <名称>` 一键清理注册项 + 开始菜单/桌面快捷方式 + 程序文件夹
+  （安全守卫：只允许删除安装目录内的内容；`-KeepFiles` 保留文件）。
+- **已注册应用管理窗口**：主窗口「管理已注册应用」→ 浏览/打开目录/卸载；`-List` 命令行清单。
+- **支持 `.bat/.cmd/.vbs` 作为主程序**（无 exe 时）。
+- **桌面快捷方式**：`-Desktop`（可 `-DesktopFolder` 定向）。
+- 版本/发布者/占用大小自动从 exe 元数据与目录计算（零依赖）。
+- 新增参数：`-Uninstall` / `-List` / `-NoRegister` / `-KeepFiles` / `-Desktop` / `-DesktopFolder`。
 
-## 本次发布（v1.0.0）功能
+## 既有能力（v1.0.0 起）
 
-- 🖱 拖拽文件夹 / 压缩包到 exe 图标或窗口即可安装
-- 📦 内置 7-Zip 引擎（7z.exe + 7z.dll，LGPL，完整版支持 .7z / .rar），无需单独安装
-- 📁 文件夹整体剪切移动；压缩包解压成功后原包自动进回收站
-- 📌 开始菜单**根目录**快捷方式（不再建子文件夹），名字自动去掉版本号与
-  `x64 / windows / win / portable / stable / beta` 等常见后缀
-- 🎯 文件夹内多个 exe 时**弹窗让你自己选**（启发式作为默认项；`-AutoPick` 可跳过弹窗）
-- 🖼 WinUI 风格观感：Win11 Mica 毛玻璃 + 跟随系统深色模式；PerMonitorV2 DPI 感知（不模糊）
-- 🏷 内置应用图标
-
-## 参数
-
-`-Destination <路径>` `-StartMenuFolder <路径>` `-Keep` `-NoShortcut` `-AutoPick` `-Log <文件>` `-Gui`
-
-详见项目 README.md。
+- 拖拽文件夹/压缩包即装；内置 7-Zip（.7z/.rar 无需安装）；zip/tar/gz 原生。
+- 开始菜单根目录快捷方式，名字自动去版本号与 `x64/windows` 等后缀。
+- 多 exe 弹窗选择；Win11 Mica + 深色模式；PerMonitorV2 DPI 清晰；内置图标。
 
 ## 使用
 
-1. 从本 Release 下载 `PortableDropper-win-x64.zip`，解压得到 `PortableDropper.exe`（单文件）。
-2. 把它放到方便的位置（如 `D:\Tools`），把绿色软件文件夹/压缩包拖到它上面即可。
-3. 卸载某个软件 = 删 `AppData\Local\Programs\<程序名>` + 删开始菜单里对应快捷方式。
+1. 从 Assets 下载 `PortableDropper-win-x64.zip`，解压得 `PortableDropper.exe`（单文件）。
+2. 拖绿色软件文件夹/压缩包到图标上即完成：装入 Programs + 开始菜单快捷方式 + 应用和功能注册。
+3. 卸载：设置 → 应用和功能 → 卸载（或 `-Uninstall`）。
 
-## 构建
+## 构建 / 许可
 
-源码 `PortableDropper.cs` 为 C# 5，用 Windows 自带 .NET Framework csc 编译，无需 SDK，
-命令见 README「重新编译」一节。
+见 README「重新编译」；本项目 MIT，内嵌 7-Zip 为 LGPL（见 THIRD-PARTY-NOTICES.md）。

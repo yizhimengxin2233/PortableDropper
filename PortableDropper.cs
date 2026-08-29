@@ -10,24 +10,28 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
+using Microsoft.Win32;
 
 namespace PortableDropper
 {
     // ============================================================
     //  PortableDropper - 便携软件安装器
-    //  拖拽文件夹 / 压缩包 → 装入 %LOCALAPPDATA%\Programs 并生成开始菜单快捷方式
+    //  拖拽文件夹 / 压缩包 → 装入 %LOCALAPPDATA%\Programs，生成开始菜单快捷方式，
+    //  并注册到「应用和功能」列表（内置卸载器、-List 清单、多 exe 弹窗选择）。
     //  使用方式：
     //    * 把文件夹或压缩包直接拖到本 exe 图标上（批处理模式，完成后自动退出）
     //    * 双击打开窗口，把文件拖进窗口区域
+    //    * 命令行：-List / -Uninstall <名称> / -Desktop / -NoRegister / -KeepFiles / -NoShortcut
     //  特性：
-    //    * PerMonitorV2 DPI 感知（高分辨率下不模糊）
-    //    * Win11 Mica 毛玻璃背景 + 深色模式跟随系统（WinUI 观感）
-    //    * 内置 7-Zip（7z.exe/7z.dll，LGPL），.7z/.rar 无需额外安装
-    //    * 多个 exe 时弹出选择窗口，不再盲选
+    //    * PerMonitorV2 DPI 感知（高分辨率不模糊）
+    //    * Win11 Mica 毛玻璃背景 + 深色模式跟随系统
+    //    * 内置 7-Zip（7z.exe/7z.dll，LGPL）：.7z/.rar 无需额外安装
+    //    * 多个 exe 时弹出选择窗口；无 exe 时支持 .bat/.cmd/.vbs
+    //    * 自动清理名称后缀（x64/windows/版本号…）
+    //  许可证：本项目代码 MIT；内嵌 7-Zip 为 LGPL（见 THIRD-PARTY-NOTICES.md）
     //  编译（Windows 自带 .NET Framework csc）：
     //    csc /nologo /target:winexe /codepage:65001
-    //        /win32icon:PortableDropper.ico
-    //        /win32manifest:PortableDropper.manifest
+    //        /win32icon:PortableDropper.ico /win32manifest:PortableDropper.manifest
     //        /r:System.IO.Compression.FileSystem.dll /r:Microsoft.VisualBasic.dll /r:Microsoft.CSharp.dll
     //        /res:7z.exe,PortableDropper.7zexe /res:7z.dll,PortableDropper.7zdll
     //        /out:PortableDropper.exe PortableDropper.cs
@@ -48,7 +52,7 @@ namespace PortableDropper
         {
             try
             {
-                using (Microsoft.Win32.RegistryKey k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(
+                using (RegistryKey k = Registry.CurrentUser.OpenSubKey(
                     @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"))
                 {
                     if (k != null)
@@ -62,7 +66,6 @@ namespace PortableDropper
             return false;
         }
 
-        // 对窗口应用 Mica 背景 + 深色标题栏（旧系统上自动忽略，不报错）
         public static void Apply(IntPtr hwnd)
         {
             bool dark = IsDark();
@@ -109,7 +112,7 @@ namespace PortableDropper
 
             var lbl = new Label
             {
-                Text = "文件夹里发现多个 exe，请选择主程序（快捷方式将指向它）：",
+                Text = "文件夹里发现多个可执行文件，请选择主程序：",
                 Dock = DockStyle.Top,
                 Height = 34,
                 Padding = new Padding(12, 10, 0, 0)
@@ -152,6 +155,106 @@ namespace PortableDropper
         }
     }
 
+    // ------------------------------------------------------------
+    //  已注册应用管理窗口
+    // ------------------------------------------------------------
+    internal class AppsListForm : Form
+    {
+        private readonly Engine _engine;
+        private ListView _list;
+
+        public AppsListForm(Engine engine)
+        {
+            _engine = engine;
+            Text = "已注册的便携应用";
+            Width = 720;
+            Height = 420;
+            MinimumSize = new Size(560, 300);
+            StartPosition = FormStartPosition.CenterScreen;
+            BackColor = Theme.Back;
+            ForeColor = Theme.Text;
+
+            _list = new ListView
+            {
+                Dock = DockStyle.Fill,
+                View = View.Details,
+                FullRowSelect = true,
+                BorderStyle = BorderStyle.None,
+                BackColor = Theme.PanelBack,
+                ForeColor = Theme.Text
+            };
+            _list.Columns.Add("名称", 180);
+            _list.Columns.Add("版本", 90);
+            _list.Columns.Add("发布者", 130);
+            _list.Columns.Add("位置", 270);
+            _list.DoubleClick += (s, e) => OpenSelected();
+
+            var bottom = new Panel { Dock = DockStyle.Bottom, Height = 46 };
+            var btnUn = new Button { Text = "卸载所选", AutoSize = true, Location = new Point(10, 10) };
+            btnUn.Click += (s, e) => UninstallSelected();
+            var btnOpen = new Button { Text = "打开目录", AutoSize = true, Location = new Point(120, 10) };
+            btnOpen.Click += (s, e) => OpenSelected();
+            var btnRefresh = new Button { Text = "刷新", AutoSize = true, Location = new Point(210, 10) };
+            btnRefresh.Click += (s, e) => Reload();
+            var btnClose = new Button { Text = "关闭", AutoSize = true, Location = new Point(280, 10) };
+            btnClose.Click += (s, e) => Close();
+            bottom.Controls.Add(btnUn);
+            bottom.Controls.Add(btnOpen);
+            bottom.Controls.Add(btnRefresh);
+            bottom.Controls.Add(btnClose);
+
+            Controls.Add(_list);
+            Controls.Add(bottom);
+            Reload();
+        }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            Theme.Apply(Handle);
+        }
+
+        private void Reload()
+        {
+            _list.BeginUpdate();
+            _list.Items.Clear();
+            foreach (string[] r in _engine.ListRegistered())
+            {
+                var it = new ListViewItem(r[0]);
+                it.SubItems.Add(r[1]);
+                it.SubItems.Add(r[2]);
+                it.SubItems.Add(r[3]);
+                it.Tag = r[3];
+                _list.Items.Add(it);
+            }
+            _list.EndUpdate();
+        }
+
+        private ListViewItem Selected()
+        {
+            return _list.SelectedItems.Count > 0 ? _list.SelectedItems[0] : null;
+        }
+
+        private void OpenSelected()
+        {
+            ListViewItem it = Selected();
+            if (it == null || it.Tag == null) return;
+            string loc = it.Tag.ToString();
+            try { if (Directory.Exists(loc)) Process.Start("explorer.exe", loc); } catch { }
+        }
+
+        private void UninstallSelected()
+        {
+            ListViewItem it = Selected();
+            if (it == null) return;
+            string name = it.Text;
+            if (MessageBox.Show("确定卸载 " + name + " ？\n（将删除注册项、快捷方式及所在文件夹）", "PortableDropper",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+            _engine.UninstallApp(name);
+            Reload();
+        }
+    }
+
     internal static class Program
     {
         [STAThread]
@@ -161,15 +264,42 @@ namespace PortableDropper
             Application.SetCompatibleTextRenderingDefault(false);
 
             Options opt = Options.Parse(args);
+            Engine engine = new Engine(opt);
+
+            // -List：列出已注册应用
+            if (opt.ListMode)
+            {
+                List<string> lines = new List<string>();
+                List<string[]> rows = engine.ListRegistered();
+                if (rows.Count == 0) lines.Add("（没有已通过 PortableDropper 注册的应用）");
+                foreach (string[] r in rows) lines.Add(r[0] + " | " + r[1] + " | " + r[2] + " | " + r[3]);
+                foreach (string l in lines) Console.WriteLine(l);
+                if (opt.LogPath != null)
+                {
+                    try { File.WriteAllLines(opt.LogPath, lines); } catch { }
+                }
+                return;
+            }
+
+            // -Uninstall <名称>：内置卸载
+            if (opt.UninstallName != null)
+            {
+                engine.OnLog += line => { };
+                engine.UninstallApp(opt.UninstallName);
+                if (opt.LogPath != null)
+                {
+                    try { File.WriteAllLines(opt.LogPath, engine.Log); } catch { }
+                }
+                return;
+            }
 
             // 没有参数 → 打开图形窗口
             if (opt.Items.Count == 0)
             {
-                Application.Run(new MainForm(new Engine(opt), opt));
+                Application.Run(new MainForm(engine, opt));
                 return;
             }
 
-            Engine engine = new Engine(opt);
             engine.OnLog += line => { };
 
             // 批处理模式（拖到 exe 图标）：处理完自动退出
@@ -186,7 +316,6 @@ namespace PortableDropper
                 return;
             }
 
-            // -Gui：打开窗口并顺带处理传入项
             Application.Run(new MainForm(engine, opt));
         }
     }
@@ -201,7 +330,13 @@ namespace PortableDropper
             @"Microsoft\Windows\Start Menu\Programs");
         public bool KeepArchive;
         public bool NoShortcut;
-        public bool AutoPick;   // 多个 exe 时不弹窗，直接取启发式结果
+        public bool NoRegister;      // 不注册到「应用和功能」
+        public bool AddDesktop;      // 额外创建桌面快捷方式
+        public bool AutoPick;        // 多个 exe 时不弹窗，直接取启发式结果
+        public bool KeepFiles;       // 卸载时保留文件
+        public bool ListMode;        // -List
+        public string UninstallName; // -Uninstall <名称>
+        public string DesktopPath = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
         public bool ShowGui;
         public string LogPath;
 
@@ -213,8 +348,14 @@ namespace PortableDropper
                 string a = args[i];
                 if (a.Equals("-Keep", StringComparison.OrdinalIgnoreCase)) o.KeepArchive = true;
                 else if (a.Equals("-NoShortcut", StringComparison.OrdinalIgnoreCase)) o.NoShortcut = true;
+                else if (a.Equals("-NoRegister", StringComparison.OrdinalIgnoreCase)) o.NoRegister = true;
+                else if (a.Equals("-Desktop", StringComparison.OrdinalIgnoreCase)) o.AddDesktop = true;
                 else if (a.Equals("-AutoPick", StringComparison.OrdinalIgnoreCase)) o.AutoPick = true;
+                else if (a.Equals("-KeepFiles", StringComparison.OrdinalIgnoreCase)) o.KeepFiles = true;
+                else if (a.Equals("-List", StringComparison.OrdinalIgnoreCase)) o.ListMode = true;
                 else if (a.Equals("-Gui", StringComparison.OrdinalIgnoreCase)) o.ShowGui = true;
+                else if (a.Equals("-Uninstall", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length) o.UninstallName = args[++i];
+                else if (a.Equals("-DesktopFolder", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length) o.DesktopPath = args[++i];
                 else if (a.Equals("-Destination", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length) o.Destination = args[++i];
                 else if (a.Equals("-StartMenuFolder", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length) o.StartMenuFolder = args[++i];
                 else if (a.Equals("-Log", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length) o.LogPath = args[++i];
@@ -232,8 +373,13 @@ namespace PortableDropper
         private static readonly string[] ArchiveExts =
             { ".zip", ".7z", ".rar", ".tar", ".gz", ".bz2", ".xz", ".tgz", ".tbz2", ".txz" };
 
+        private static readonly string[] ScriptExts =
+            { "*.bat", "*.cmd", "*.vbs" };
+
         private static readonly Regex BadExe = new Regex(
             @"(?i)(unins|uninstall|uninst|setup|install|redist|helper|crash|update|patch|repair|卸载)");
+
+        private const string UninstallRoot = @"Software\Microsoft\Windows\CurrentVersion\Uninstall";
 
         public readonly Options Opt;
         public readonly List<string> Log = new List<string>();
@@ -282,13 +428,13 @@ namespace PortableDropper
                             StringComparison.OrdinalIgnoreCase))
                     {
                         AddLog("· 已在目标目录，跳过移动： " + name);
-                        TryShortcut(full, name);
+                        TryShortcut(full, name, null);
                         return;
                     }
                     string target = UniquePath(Path.Combine(Opt.Destination, name));
                     MoveDirectory(full, target);
                     AddLog("✔ 已移动文件夹 → " + target);
-                    TryShortcut(target, name);
+                    TryShortcut(target, name, null);
                     return;
                 }
 
@@ -310,7 +456,7 @@ namespace PortableDropper
                         if (Recycle(full)) AddLog("· 原压缩包已移入回收站");
                         else AddLog("△ 未能回收原压缩包，已保留在原处: " + full);
                     }
-                    TryShortcut(target, appName);
+                    TryShortcut(target, appName, null);
                     return;
                 }
 
@@ -319,7 +465,7 @@ namespace PortableDropper
                 MoveFile(full, dest);
                 AddLog("✔ 已移动文件 → " + dest);
                 if (ext.Equals(".exe", StringComparison.OrdinalIgnoreCase))
-                    TryShortcut(Path.GetDirectoryName(dest), Path.GetFileNameWithoutExtension(name));
+                    TryShortcut(Path.GetDirectoryName(dest), Path.GetFileNameWithoutExtension(name), dest);
             }
             catch (Exception ex)
             {
@@ -355,7 +501,6 @@ namespace PortableDropper
                     AddLog("△ 未找到可用的 7-Zip（内置资源缺失或运行失败）");
                     return false;
                 }
-                // tar / gz / bz2 / xz / tgz / tbz2 / txz（Windows 10+ 自带 bsdtar）
                 return Run("tar.exe", "-xf \"" + src + "\" -C \"" + dest + "\"");
             }
             catch (Exception ex)
@@ -365,7 +510,6 @@ namespace PortableDropper
             }
         }
 
-        // 从自身资源提取内置 7-Zip（7z.exe + 7z.dll）到 %TEMP%\PortableDropper\7zip
         private static bool Ensure7Zip(out string exePath)
         {
             exePath = null;
@@ -374,12 +518,11 @@ namespace PortableDropper
                 string dir = Path.Combine(Path.GetTempPath(), "PortableDropper", "7zip");
                 Directory.CreateDirectory(dir);
                 Assembly asm = typeof(Program).Assembly;
-                string[] resourceName = { "PortableDropper.7zexe", "PortableDropper.7zdll" };
-                foreach (string res in resourceName)
+                foreach (string res in new[] { "PortableDropper.7zexe", "PortableDropper.7zdll" })
                 {
                     using (Stream s = asm.GetManifestResourceStream(res))
                     {
-                        if (s == null) return false; // 未内嵌（重新编译时漏了 /res）
+                        if (s == null) return false;
                         string fp = Path.Combine(dir, res.EndsWith(".7zexe") ? "7z.exe" : "7z.dll");
                         if (!File.Exists(fp) || new FileInfo(fp).Length != s.Length)
                         {
@@ -437,21 +580,33 @@ namespace PortableDropper
         }
 
         // --------------------------------------------------------
-        //  快捷方式
+        //  快捷方式 + 「应用和功能」注册
         // --------------------------------------------------------
-        private void TryShortcut(string dir, string appName)
+        private void TryShortcut(string dir, string appName, string knownExe)
         {
             if (Opt.NoShortcut) return;
             try
             {
-                List<string> root = RootExes(dir);
-                List<string> candidates = root.Count > 0
-                    ? root
-                    : RecursiveExes(dir, appName);
+                List<string> candidates;
+                if (knownExe != null)
+                {
+                    candidates = new List<string> { knownExe };
+                }
+                else
+                {
+                    List<string> root = RootExes(dir);
+                    if (root.Count > 0) candidates = root;
+                    else
+                    {
+                        List<string> sub = RecursiveExes(dir, appName);
+                        if (sub.Count > 0) candidates = sub;
+                        else candidates = NonExeCandidates(dir);
+                    }
+                }
 
                 if (candidates.Count == 0)
                 {
-                    AddLog("△ 未找到主程序 (.exe)，未创建快捷方式: " + dir);
+                    AddLog("△ 未找到主程序 (.exe/.bat/.cmd/.vbs)，未创建快捷方式: " + dir);
                     return;
                 }
 
@@ -462,13 +617,13 @@ namespace PortableDropper
                 }
                 else if (Opt.AutoPick)
                 {
-                    exe = PickMainExe(dir, appName);
-                    AddLog("· 多个 exe，自动选择 (-AutoPick): " + Path.GetFileName(exe));
+                    string h = PickMainExe(dir, appName);
+                    exe = h ?? candidates[0];
+                    AddLog("· 多个可执行文件，自动选择 (-AutoPick): " + Path.GetFileName(exe));
                 }
                 else
                 {
-                    // 弹出选择窗口让用户自己定
-                    string heuristic = PickMainExe(dir, appName);
+                    string heuristic = PickMainExe(dir, appName) ?? candidates[0];
                     using (var picker = new ExePickerForm(appName, candidates, heuristic))
                     {
                         if (picker.ShowDialog() != DialogResult.OK || picker.SelectedPath == null)
@@ -481,19 +636,28 @@ namespace PortableDropper
                     AddLog("· 手动选择主程序: " + Path.GetFileName(exe));
                 }
 
-                Directory.CreateDirectory(Opt.StartMenuFolder);
                 string clean = CleanName(appName);
+                Directory.CreateDirectory(Opt.StartMenuFolder);
                 string lnk = UniquePath(Path.Combine(Opt.StartMenuFolder, clean + ".lnk"));
-
-                Type t = Type.GetTypeFromProgID("WScript.Shell");
-                dynamic shell = Activator.CreateInstance(t);
-                dynamic sc = shell.CreateShortcut(lnk);
-                sc.TargetPath = exe;
-                sc.WorkingDirectory = Path.GetDirectoryName(exe);
-                sc.IconLocation = exe + ",0";
-                sc.Description = clean + "（便携版）";
-                sc.Save();
+                CreateLnk(lnk, exe, clean);
                 AddLog("✔ 快捷方式: " + lnk + "  →  " + Path.GetFileName(exe));
+
+                if (Opt.AddDesktop)
+                {
+                    try
+                    {
+                        Directory.CreateDirectory(Opt.DesktopPath);
+                        string dlnk = UniquePath(Path.Combine(Opt.DesktopPath, clean + ".lnk"));
+                        CreateLnk(dlnk, exe, clean);
+                        AddLog("✔ 桌面快捷方式: " + dlnk);
+                    }
+                    catch (Exception dex)
+                    {
+                        AddLog("△ 桌面快捷方式创建失败: " + dex.Message);
+                    }
+                }
+
+                RegisterAppsAndFeatures(exe, dir, appName);
             }
             catch (Exception ex)
             {
@@ -501,7 +665,221 @@ namespace PortableDropper
             }
         }
 
-        // 根目录下的候选 exe（已排除 unins/setup/helper 等）
+        private static void CreateLnk(string lnkPath, string target, string appName)
+        {
+            Type t = Type.GetTypeFromProgID("WScript.Shell");
+            dynamic shell = Activator.CreateInstance(t);
+            dynamic sc = shell.CreateShortcut(lnkPath);
+            sc.TargetPath = target;
+            sc.WorkingDirectory = Path.GetDirectoryName(target);
+            sc.IconLocation = target + ",0";
+            sc.Description = appName + "（便携版）";
+            sc.Save();
+        }
+
+        // 注册到 Windows「应用和功能」列表（HKCU，无需管理员）
+        private void RegisterAppsAndFeatures(string exe, string dir, string appName)
+        {
+            if (Opt.NoRegister) return;
+            try
+            {
+                string clean = CleanName(appName);
+                string keyPath = UninstallRoot + "\\" + UniqueKeyName(clean);
+                string self = Application.ExecutablePath;
+
+                FileVersionInfo vi = FileVersionInfo.GetVersionInfo(exe);
+                string ver = !string.IsNullOrEmpty(vi.FileVersion) ? vi.FileVersion : vi.ProductVersion;
+                if (string.IsNullOrEmpty(ver)) ver = "1.0.0";
+                string pub = vi.CompanyName;
+                if (string.IsNullOrEmpty(pub)) pub = "绿色软件";
+
+                long sizeKb = DirSizeKB(exe, dir);
+
+                using (RegistryKey k = Registry.CurrentUser.CreateSubKey(keyPath))
+                {
+                    k.SetValue("DisplayName", clean);
+                    k.SetValue("DisplayVersion", ver);
+                    k.SetValue("Publisher", pub);
+                    k.SetValue("DisplayIcon", exe);
+                    k.SetValue("InstallLocation", dir);
+                    k.SetValue("EstimatedSize", (int)sizeKb, RegistryValueKind.DWord);
+                    k.SetValue("NoModify", 1, RegistryValueKind.DWord);
+                    k.SetValue("NoRepair", 1, RegistryValueKind.DWord);
+                    k.SetValue("PortableDropper", 1, RegistryValueKind.DWord);
+                    k.SetValue("UninstallString", "\"" + self + "\" -Uninstall \"" + clean + "\"");
+                }
+                AddLog("✔ 已注册到「应用和功能」: " + clean + "  (" + ver + " / " + pub + ")");
+            }
+            catch (Exception ex)
+            {
+                AddLog("△ 注册「应用和功能」失败: " + ex.Message);
+            }
+        }
+
+        // --------------------------------------------------------
+        //  卸载（-Uninstall <名称> / 管理窗口）
+        // --------------------------------------------------------
+        public void UninstallApp(string name)
+        {
+            try
+            {
+                string matchKey = null;
+                string disp = name;
+                string installLoc = null;
+                string exe = null;
+
+                using (RegistryKey root = Registry.CurrentUser.OpenSubKey(UninstallRoot))
+                {
+                    if (root == null)
+                    {
+                        AddLog("✖ 未找到已注册应用: " + name);
+                        return;
+                    }
+                    foreach (string sub in root.GetSubKeyNames())
+                    {
+                        using (RegistryKey k = root.OpenSubKey(sub))
+                        {
+                            if (k == null) continue;
+                            object pd = k.GetValue("PortableDropper");
+                            if (pd == null || (int)pd != 1) continue;
+                            object dn = k.GetValue("DisplayName");
+                            string d = dn == null ? sub : dn.ToString();
+                            if (string.Equals(d, name, StringComparison.OrdinalIgnoreCase) ||
+                                string.Equals(CleanName(d), CleanName(name), StringComparison.OrdinalIgnoreCase))
+                            {
+                                matchKey = sub;
+                                disp = d;
+                                object il = k.GetValue("InstallLocation");
+                                if (il != null && Directory.Exists(il.ToString())) installLoc = il.ToString();
+                                object ic = k.GetValue("DisplayIcon");
+                                if (ic != null) exe = ic.ToString();
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (matchKey == null)
+                {
+                    AddLog("✖ 未找到已注册应用: " + name);
+                    return;
+                }
+
+                using (RegistryKey root = Registry.CurrentUser.OpenSubKey(UninstallRoot, true))
+                {
+                    if (root != null) root.DeleteSubKeyTree(matchKey, false);
+                }
+                AddLog("✔ 已移除「应用和功能」注册项: " + disp);
+
+                // 快捷方式（开始菜单 + 可能的 (2) 后缀 + 桌面）
+                DeleteShortcutsNamed(CleanName(disp));
+                try
+                {
+                    string de = Path.Combine(Opt.DesktopPath, CleanName(disp) + ".lnk");
+                    if (File.Exists(de)) { File.Delete(de); AddLog("✔ 已删除桌面快捷方式: " + de); }
+                }
+                catch { }
+
+                // 文件夹 / 单文件
+                if (installLoc != null)
+                {
+                    bool isRoot = string.Equals(installLoc.TrimEnd('\\'), Opt.Destination.TrimEnd('\\'),
+                        StringComparison.OrdinalIgnoreCase);
+                    if (Opt.KeepFiles)
+                    {
+                        AddLog("· 已保留文件（-KeepFiles）: " + installLoc);
+                    }
+                    else if (isRoot)
+                    {
+                        if (exe != null && File.Exists(exe) &&
+                            string.Equals(Path.GetDirectoryName(exe).TrimEnd('\\'),
+                                Opt.Destination.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
+                        {
+                            File.Delete(exe);
+                            AddLog("✔ 已删除文件: " + exe);
+                        }
+                        else AddLog("△ 跳过删除：无法定位目标文件");
+                    }
+                    else
+                    {
+                        string parent = Path.GetDirectoryName(installLoc.TrimEnd('\\'));
+                        if (parent != null && string.Equals(parent.TrimEnd('\\'),
+                                Opt.Destination.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
+                        {
+                            Directory.Delete(installLoc, true);
+                            AddLog("✔ 已删除文件夹: " + installLoc);
+                        }
+                        else AddLog("△ 跳过文件夹删除（位置不在目标目录内）: " + installLoc);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AddLog("✖ 卸载失败: " + ex.Message);
+            }
+        }
+
+        private void DeleteShortcutsNamed(string cleanName)
+        {
+            try
+            {
+                foreach (string f in Directory.GetFiles(Opt.StartMenuFolder, "*.lnk"))
+                {
+                    string baseN = Path.GetFileNameWithoutExtension(f);
+                    if (baseN.Equals(cleanName, StringComparison.OrdinalIgnoreCase) ||
+                        Regex.IsMatch(baseN, "^" + Regex.Escape(cleanName) + " \\(\\d+\\)$",
+                            RegexOptions.IgnoreCase))
+                    {
+                        File.Delete(f);
+                        AddLog("✔ 已删除快捷方式: " + f);
+                    }
+                }
+            }
+            catch { }
+        }
+
+        // --------------------------------------------------------
+        //  已注册应用清单（-List / 管理窗口）
+        // --------------------------------------------------------
+        public List<string[]> ListRegistered()
+        {
+            var rows = new List<string[]>();
+            try
+            {
+                using (RegistryKey root = Registry.CurrentUser.OpenSubKey(UninstallRoot))
+                {
+                    if (root == null) return rows;
+                    foreach (string sub in root.GetSubKeyNames())
+                    {
+                        using (RegistryKey k = root.OpenSubKey(sub))
+                        {
+                            if (k == null) continue;
+                            object pd = k.GetValue("PortableDropper");
+                            if (pd == null || (int)pd != 1) continue;
+                            object dn = k.GetValue("DisplayName");
+                            string d = dn == null ? sub : dn.ToString();
+                            object v = k.GetValue("DisplayVersion");
+                            object pb = k.GetValue("Publisher");
+                            object il = k.GetValue("InstallLocation");
+                            rows.Add(new[]
+                            {
+                                d,
+                                v == null ? "" : v.ToString(),
+                                pb == null ? "" : pb.ToString(),
+                                il == null ? "" : il.ToString()
+                            });
+                        }
+                    }
+                }
+            }
+            catch { }
+            rows.Sort((a, b) => string.CompareOrdinal(a[0], b[0]));
+            return rows;
+        }
+
+        // --------------------------------------------------------
+        //  候选查找
+        // --------------------------------------------------------
         private static List<string> RootExes(string dir)
         {
             try
@@ -518,7 +896,6 @@ namespace PortableDropper
             }
         }
 
-        // 根目录没有 exe 时，递归子目录找名称包含应用名的
         private static List<string> RecursiveExes(string dir, string appName)
         {
             try
@@ -536,8 +913,27 @@ namespace PortableDropper
             }
         }
 
-        // 启发式主程序选择（多 exe 时作为弹窗默认项 / -AutoPick 的直接结果）：
-        //   1) 名称完全匹配  2) 以前缀匹配  3) 名称包含（取最短）  4) 取名字最短
+        // 无 exe 时支持 .bat/.cmd/.vbs 作为主程序
+        private static List<string> NonExeCandidates(string dir)
+        {
+            var list = new List<string>();
+            try
+            {
+                foreach (string pat in ScriptExts)
+                {
+                    foreach (string f in Directory.GetFiles(dir, pat))
+                    {
+                        if (!BadExe.IsMatch(Path.GetFileNameWithoutExtension(f))) list.Add(f);
+                    }
+                }
+            }
+            catch { }
+            return list
+                .OrderBy(f => Path.GetFileNameWithoutExtension(f).Length)
+                .ThenBy(f => f, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
         private static string PickMainExe(string dir, string appName)
         {
             string appKey = KeyOf(appName);
@@ -567,20 +963,14 @@ namespace PortableDropper
                 .ToLowerInvariant();
         }
 
-        // 快捷方式命名 / exe 匹配时移除的常见后缀
         private static readonly string[] NameSuffixes =
         {
-            // 平台 / 架构
             "x64", "x86", "amd64", "arm64", "win64", "win32", "win10", "win11", "windows", "win",
             "64bit", "32bit", "64", "32",
-            // 形态标签
             "portable", "portableapps", "green", "free", "setup", "installer",
-            // 发布渠道
             "stable", "release", "final", "beta", "alpha", "preview"
         };
 
-        // 去掉名字末尾的版本号与常见后缀（带分隔符才移除），
-        // 例如: Obsidian-1.6.7-win-x64 → Obsidian；LocalSend_v1.16.1_windows-x64 → LocalSend
         private static string CleanName(string name)
         {
             string n = name;
@@ -606,6 +996,39 @@ namespace PortableDropper
                 }
             } while (changed);
             return string.IsNullOrWhiteSpace(n.Trim()) ? name : n.Trim();
+        }
+
+        private static string UniqueKeyName(string baseName)
+        {
+            string key = baseName;
+            for (int i = 2; ; i++)
+            {
+                using (RegistryKey k = Registry.CurrentUser.OpenSubKey(UninstallRoot + "\\" + key))
+                {
+                    if (k == null) return key;
+                }
+                key = baseName + " (" + i + ")";
+            }
+        }
+
+        private long DirSizeKB(string exe, string dir)
+        {
+            bool singleFile = string.Equals(dir.TrimEnd('\\'),
+                Opt.Destination.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
+            if (singleFile)
+            {
+                try { return new FileInfo(exe).Length / 1024; } catch { return 0; }
+            }
+            long total = 0;
+            try
+            {
+                foreach (string f in Directory.GetFiles(dir, "*", SearchOption.AllDirectories))
+                {
+                    try { total += new FileInfo(f).Length; } catch { }
+                }
+            }
+            catch { }
+            return total / 1024;
         }
 
         // --------------------------------------------------------
@@ -684,7 +1107,7 @@ namespace PortableDropper
     }
 
     // ============================================================
-    //  图形窗口
+    //  主窗口
     // ============================================================
     internal class MainForm : Form
     {
@@ -703,15 +1126,15 @@ namespace PortableDropper
         protected override void OnHandleCreated(EventArgs e)
         {
             base.OnHandleCreated(e);
-            Theme.Apply(Handle); // Mica + 深色标题栏（Win11）
+            Theme.Apply(Handle);
         }
 
         private void BuildUi()
         {
             Text = "便携软件安装器 PortableDropper";
-            Width = 640;
-            Height = 480;
-            MinimumSize = new Size(480, 360);
+            Width = 660;
+            Height = 490;
+            MinimumSize = new Size(500, 370);
             StartPosition = FormStartPosition.CenterScreen;
             BackColor = Theme.Back;
             ForeColor = Theme.Text;
@@ -748,10 +1171,10 @@ namespace PortableDropper
                 {
                     e.Graphics.DrawString(
                         "把文件夹或压缩包拖到这里，或直接拖到本程序图标上\n" +
-                        "支持: 文件夹 / .zip / .7z / .rar（内置 7-Zip，无需安装）/ .tar .gz 等\n" +
+                        "支持: 文件夹 / .zip / .7z / .rar（内置 7-Zip）/ .tar .gz 等\n" +
                         "自动装入 " + _opt.Destination + "\n" +
-                        "开始菜单快捷方式自动创建；多个 exe 时会弹窗让你选择",
-                        Font, b, 22, 30);
+                        "自动生成开始菜单快捷方式并注册到「应用和功能」；多个 exe 会弹窗让你选择",
+                        Font, b, 22, 26);
                 }
             };
 
@@ -776,11 +1199,17 @@ namespace PortableDropper
             var bottom = new Panel { Dock = DockStyle.Bottom, Height = 42 };
             var btnOpen = new Button { Text = "打开目标目录", AutoSize = true, Location = new Point(10, 9) };
             btnOpen.Click += (s, e) => { try { Process.Start("explorer.exe", _opt.Destination); } catch { } };
-            var btnClear = new Button { Text = "清空日志", AutoSize = true, Location = new Point(140, 9) };
+            var btnApps = new Button { Text = "管理已注册应用", AutoSize = true, Location = new Point(140, 9) };
+            btnApps.Click += (s, e) =>
+            {
+                using (var f = new AppsListForm(_engine)) { f.ShowDialog(this); }
+            };
+            var btnClear = new Button { Text = "清空日志", AutoSize = true, Location = new Point(280, 9) };
             btnClear.Click += (s, e) => _log.Clear();
-            var btnQuit = new Button { Text = "退出", AutoSize = true, Location = new Point(250, 9) };
+            var btnQuit = new Button { Text = "退出", AutoSize = true, Location = new Point(400, 9) };
             btnQuit.Click += (s, e) => Close();
             bottom.Controls.Add(btnOpen);
+            bottom.Controls.Add(btnApps);
             bottom.Controls.Add(btnClear);
             bottom.Controls.Add(btnQuit);
 
