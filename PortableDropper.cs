@@ -99,11 +99,41 @@ namespace PortableDropper
                 Zh = lang.StartsWith("zh", StringComparison.OrdinalIgnoreCase);
                 return;
             }
+            // 持久化：GUI 里选过的语言存注册表，拖图标（新进程）也沿用
+            try
+            {
+                using (RegistryKey k = Registry.CurrentUser.OpenSubKey(@"Software\PortableDropper"))
+                {
+                    if (k != null)
+                    {
+                        object v = k.GetValue("Language");
+                        if (v != null)
+                        {
+                            Zh = v.ToString().StartsWith("zh", StringComparison.OrdinalIgnoreCase);
+                            return;
+                        }
+                    }
+                }
+            }
+            catch { }
             try
             {
                 Zh = Thread.CurrentThread.CurrentUICulture.Name.StartsWith("zh", StringComparison.OrdinalIgnoreCase);
             }
             catch { Zh = true; }
+        }
+
+        // 保存用户选择的语言（注册表 HKCU）
+        public static void Save()
+        {
+            try
+            {
+                using (RegistryKey k = Registry.CurrentUser.CreateSubKey(@"Software\PortableDropper"))
+                {
+                    if (k != null) k.SetValue("Language", Zh ? "zh" : "en");
+                }
+            }
+            catch { }
         }
 
         public static string T(string key, params object[] args)
@@ -1717,8 +1747,8 @@ namespace PortableDropper
                 Margin = new Padding(8, 2, 0, 0),
                 ForeColor = Theme.Text
             };
-            rbZh.CheckedChanged += (s, e) => { if (rbZh.Checked) { L10n.Zh = true; ApplyUiText(); } };
-            rbEn.CheckedChanged += (s, e) => { if (rbEn.Checked) { L10n.Zh = false; ApplyUiText(); } };
+            rbZh.CheckedChanged += (s, e) => { if (rbZh.Checked) { L10n.Zh = true; L10n.Save(); ApplyUiText(); } };
+            rbEn.CheckedChanged += (s, e) => { if (rbEn.Checked) { L10n.Zh = false; L10n.Save(); ApplyUiText(); } };
             langFlow.Controls.Add(_langLabel);
             langFlow.Controls.Add(rbZh);
             langFlow.Controls.Add(rbEn);

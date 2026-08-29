@@ -119,10 +119,21 @@ Three equivalent ways (removes the registry entry + Start Menu / desktop shortcu
   extraction, distributed as part of this tool — see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)
   and [7-Zip's website](https://www.7-zip.org/).
 
-## Rebuild (optional — uses the csc built into Windows, no SDK)
+## Rebuild (optional — no VS / SDK needed)
+
+> ⚠ Note: `csc.exe` ships with .NET Framework but is **not on PATH** — typing `csc` gives
+> "not recognized as an internal or external command". Its full path is
+> `C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe` (use the `Framework` folder on 32-bit),
+> so just run the bundled **`build.bat`**:
 
 ```
-csc /nologo /target:winexe /codepage:65001
+build.bat
+```
+
+Equivalent manual command (PowerShell / CMD, full path required):
+
+```
+& "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:winexe /codepage:65001
     /win32icon:PortableDropper.ico /win32manifest:PortableDropper.manifest
     /r:System.IO.Compression.FileSystem.dll /r:Microsoft.VisualBasic.dll /r:Microsoft.CSharp.dll
     /res:7z.exe,PortableDropper.7zexe /res:7z.dll,PortableDropper.7zdll

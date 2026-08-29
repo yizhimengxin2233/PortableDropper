@@ -100,10 +100,20 @@
 - **内嵌 7-Zip**（`7z.exe`/`7z.dll`）：**LGPL**（作者 Igor Pavlov），未修改、仅用于解压，
   随本工具整体分发，详见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) 与 [7-Zip 官网](https://www.7-zip.org/)。
 
-## 重新编译（可选，Windows 自带 csc，无需 SDK）
+## 重新编译（可选，无需安装 VS / SDK）
+
+> ⚠ 注意：`csc.exe` 虽然随 .NET Framework 自带，但**不在 PATH 里**——直接敲 `csc` 会报"不是内部或外部命令"。
+> 完整路径是 `C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe`（32 位系统用 `Framework` 目录），
+> 推荐直接用项目里的 **`build.bat`**（已处理好路径）：
 
 ```
-csc /nologo /target:winexe /codepage:65001
+build.bat
+```
+
+等效的手动命令（PowerShell / CMD 都可用，需用完整路径）：
+
+```
+& "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:winexe /codepage:65001
     /win32icon:PortableDropper.ico /win32manifest:PortableDropper.manifest
     /r:System.IO.Compression.FileSystem.dll /r:Microsoft.VisualBasic.dll /r:Microsoft.CSharp.dll
     /res:7z.exe,PortableDropper.7zexe /res:7z.dll,PortableDropper.7zdll
