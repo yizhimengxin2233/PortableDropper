@@ -172,7 +172,7 @@ namespace PortableDropper
             { "extractFail", "✖ Extraction failed: {0}" },
             { "extracted", "✔ Extracted {0} → {1}" },
             { "recycled", "· Original archive moved to Recycle Bin" },
-            { "recycleFailed", "△ Could not recycle the original archive, kept at: {0}" },
+            { "recycleFailed", "△ Could not recycle, item kept at: {0}" },
             { "movedFile", "✔ Moved file → {0}" },
             { "fail", "✖ Failed: {0} → {1}" },
             { "fallback7z", "△ Embedded 7-Zip failed; falling back to installed 7-Zip" },
@@ -195,6 +195,7 @@ namespace PortableDropper
             { "deletedFile", "✔ Deleted file: {0}" },
             { "skipFileDel", "△ Skipped deletion: could not locate the target file" },
             { "deletedFolder", "✔ Deleted folder: {0}" },
+            { "recycledFolder", "♻ Moved to Recycle Bin: {0}" },
             { "skipFolderDel", "△ Skipped folder deletion (outside the target folder): {0}" },
             { "uninstFail", "✖ Uninstall failed: {0}" },
             { "delShortcut", "✔ Deleted shortcut: {0}" },
@@ -244,7 +245,7 @@ namespace PortableDropper
             { "extractFail", "✖ 解压失败: {0}" },
             { "extracted", "✔ 已解压 {0} → {1}" },
             { "recycled", "· 原压缩包已移入回收站" },
-            { "recycleFailed", "△ 未能回收原压缩包，已保留在原处: {0}" },
+            { "recycleFailed", "△ 回收失败，已保留在原处: {0}" },
             { "movedFile", "✔ 已移动文件 → {0}" },
             { "fail", "✖ 失败: {0} → {1}" },
             { "fallback7z", "△ 内置 7-Zip 失败，改用系统安装的 7-Zip" },
@@ -267,6 +268,7 @@ namespace PortableDropper
             { "deletedFile", "✔ 已删除文件: {0}" },
             { "skipFileDel", "△ 跳过删除：无法定位目标文件" },
             { "deletedFolder", "✔ 已删除文件夹: {0}" },
+            { "recycledFolder", "♻ 已移入回收站: {0}" },
             { "skipFolderDel", "△ 跳过文件夹删除（位置不在目标目录内）: {0}" },
             { "uninstFail", "✖ 卸载失败: {0}" },
             { "delShortcut", "✔ 已删除快捷方式: {0}" },
@@ -1288,8 +1290,9 @@ namespace PortableDropper
                             string.Equals(Path.GetDirectoryName(exe).TrimEnd('\\'),
                                 Opt.Destination.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
                         {
-                            File.Delete(exe);
-                            AddLog(L10n.T("deletedFile", exe));
+                            // 卸载 → 移入回收站（与文件夹一致，可恢复）
+                            if (Recycle(exe)) AddLog(L10n.T("recycledFolder", exe));
+                            else AddLog(L10n.T("recycleFailed", exe));
                         }
                         else AddLog(L10n.T("skipFileDel"));
                     }
@@ -1299,8 +1302,9 @@ namespace PortableDropper
                         if (parent != null && string.Equals(parent.TrimEnd('\\'),
                                 Opt.Destination.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
                         {
-                            Directory.Delete(loc, true);
-                            AddLog(L10n.T("deletedFolder", loc));
+                            // 卸载 → 移入回收站（可恢复，非永久删除），与更新替换一致
+                            if (RecycleDirectory(loc)) AddLog(L10n.T("recycledFolder", loc));
+                            else AddLog(L10n.T("recycleFailed", loc));
                         }
                         else AddLog(L10n.T("skipFolderDel", loc));
                     }
