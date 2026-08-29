@@ -1322,8 +1322,8 @@ namespace PortableDropper
         private void BuildUi()
         {
             Width = 740;
-            Height = 490;
-            MinimumSize = new Size(560, 370);
+            Height = 524;
+            MinimumSize = new Size(560, 410);
             StartPosition = FormStartPosition.CenterScreen;
             BackColor = Theme.Back;
             ForeColor = Theme.Text;
@@ -1384,7 +1384,7 @@ namespace PortableDropper
                 Height = 22
             };
 
-            var bottom = new Panel { Dock = DockStyle.Bottom, Height = 42 };
+            var bottom = new Panel { Dock = DockStyle.Bottom, Height = 76 };
             _btnOpen = new Button { AutoSize = true, Location = new Point(10, 9) };
             _btnOpen.Click += (s, e) => { try { Process.Start("explorer.exe", _opt.Destination); } catch { } };
             _btnApps = new Button { AutoSize = true, Location = new Point(140, 9) };
@@ -1396,16 +1396,18 @@ namespace PortableDropper
             _btnClear.Click += (s, e) => _log.Clear();
             _btnQuit = new Button { AutoSize = true, Location = new Point(400, 9) };
             _btnQuit.Click += (s, e) => Close();
+            // 第二行：左侧桌面快捷方式勾选，右侧语言切换（右侧锚定，避免与文字重叠）
             _chkDesktop = new CheckBox
             {
                 AutoSize = true,
                 Checked = _opt.AddDesktop,
-                Location = new Point(470, 12)
+                Location = new Point(10, 50)
             };
             _langCombo = new ComboBox
             {
                 DropDownStyle = ComboBoxStyle.DropDownList,
-                Location = new Point(640, 9),
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                Location = new Point(600, 50),
                 Width = 92
             };
             _langCombo.Items.Add("中文");
