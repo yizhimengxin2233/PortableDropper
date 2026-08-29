@@ -24,7 +24,7 @@ namespace PortableDropper
     //    * 命令行：-List / -Uninstall <名称> / -Desktop / -NoRegister / -KeepFiles / -NoShortcut
     //  特性：
     //    * PerMonitorV2 DPI 感知（高分辨率不模糊）
-    //    * Win11 Mica 毛玻璃背景 + 深色模式跟随系统
+    //    * 深色模式跟随系统（Win11 深色标题栏）
     //    * 内置 7-Zip（7z.exe/7z.dll，LGPL）：.7z/.rar 无需额外安装
     //    * 多个 exe 时弹出选择窗口；无 exe 时支持 .bat/.cmd/.vbs
     //    * 自动清理名称后缀（x64/windows/版本号…）
@@ -38,7 +38,7 @@ namespace PortableDropper
     // ============================================================
 
     // ------------------------------------------------------------
-    //  主题（Win11 Mica / 深色跟随系统）
+    //  主题（深色标题栏跟随系统）
     // ------------------------------------------------------------
     internal static class Theme
     {
@@ -46,7 +46,6 @@ namespace PortableDropper
         private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
 
         private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
-        private const int DWMWA_SYSTEMBACKDROP_TYPE = 38; // 2 = Mica, 3 = MicaAlt, 4 = Acrylic
 
         public static bool IsDark()
         {
@@ -68,17 +67,12 @@ namespace PortableDropper
 
         public static void Apply(IntPtr hwnd)
         {
+            // 仅应用深色标题栏（跟随系统深浅色）；Mica 毛玻璃效果已移除
             bool dark = IsDark();
             try
             {
                 int v = dark ? 1 : 0;
                 DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref v, sizeof(int));
-            }
-            catch { }
-            try
-            {
-                int v = 2; // Mica
-                DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, ref v, sizeof(int));
             }
             catch { }
         }
@@ -1115,6 +1109,7 @@ namespace PortableDropper
         private readonly Options _opt;
         private TextBox _log;
         private Label _status;
+        private CheckBox _chkDesktop;
 
         public MainForm(Engine engine, Options opt)
         {
@@ -1208,10 +1203,18 @@ namespace PortableDropper
             btnClear.Click += (s, e) => _log.Clear();
             var btnQuit = new Button { Text = "退出", AutoSize = true, Location = new Point(400, 9) };
             btnQuit.Click += (s, e) => Close();
+            _chkDesktop = new CheckBox
+            {
+                Text = "同时创建桌面快捷方式",
+                AutoSize = true,
+                Checked = _opt.AddDesktop,
+                Location = new Point(490, 12)
+            };
             bottom.Controls.Add(btnOpen);
             bottom.Controls.Add(btnApps);
             bottom.Controls.Add(btnClear);
             bottom.Controls.Add(btnQuit);
+            bottom.Controls.Add(_chkDesktop);
 
             Controls.Add(_log);
             Controls.Add(drop);
@@ -1227,6 +1230,7 @@ namespace PortableDropper
 
         private void ProcessPaths(string[] paths)
         {
+            _opt.AddDesktop = _chkDesktop.Checked;
             Append("==== 开始处理 " + paths.Length + " 项 ====");
             _status.Text = "处理中…";
             _engine.RunProcessAsync(paths, () =>
