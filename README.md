@@ -1,104 +1,90 @@
-# PortableDropper
+# PortableDropper 便携软件安装器
 
-> **Author note**: This tool was written and verified by a **DeepSeek AI assistant** (V4 session).
-> The source (`PortableDropper.cs`) is C# 5 and can be rebuilt with the .NET Framework compiler
-> that ships with Windows — no SDK required.
+> **Language**: [English](README.en.md) | 中文
 
-> **Language**: English | [中文](README.zh-CN.md)
+> **作者注**：本工具由 **DeepSeek AI 助手**（V4 会话）编写并验证。
+> 源码（`PortableDropper.cs`）为 C# 5，可直接用 Windows 自带的 .NET Framework 编译器重新编译。
 
-A tiny, dependency-free Windows utility for "green" (portable) software:
-**drag a folder or an archive onto the app icon**, and it will:
+把下载的**绿色软件文件夹 / 压缩包**拖进去，自动装入 `%LOCALAPPDATA%\Programs`，
+生成**开始菜单快捷方式**，并**注册到 Windows「应用和功能」列表**——像管普通安装程序一样管理绿色软件。
+单文件 `.exe`（内嵌图标、7-Zip 引擎、DPI 清单），零依赖、免安装。
 
-- move the folder (or extract the archive) into `%LOCALAPPDATA%\Programs`
-- create a **Start Menu shortcut** in the root Programs folder with a cleaned-up name
-  (strips version numbers and common suffixes such as `x64`, `windows`, `win`, `portable`, `stable`, `beta`…)
-- **register the app into Windows "Apps & features"** (per-user, no admin rights),
-  with version / publisher / icon / location / size auto-detected from the executable
-- support archives: `.zip` (native), `.7z` / `.rar` (**embedded 7-Zip**, nothing to install),
-  `.tar` / `.tar.gz` / `.tgz` / `.bz2` / `.xz` (built into Windows 10/11)
+## 文件
 
-Single-file `.exe` with an embedded icon, the 7-Zip engine and a DPI manifest.
-Zero dependencies, no installation.
-
-## Files
-
-| File | Purpose |
+| 文件 | 作用 |
 |---|---|
-| `PortableDropper.exe` | Main program (single file, ~2.4 MB — just copy this one around) |
-| `PortableDropper.cs` | Source code |
-| `PortableDropper.ico` / `.manifest` | Icon / DPI manifest (build inputs) |
-| `7z.exe` / `7z.dll` | Embedded 7-Zip engine sources (already embedded in the exe, only needed to rebuild) |
-| `LICENSE` | MIT license for this project's code |
-| `THIRD-PARTY-NOTICES.md` | Third-party notice (embedded 7-Zip, LGPL) |
-| `RELEASE.md` / `publish-gh.ps1` | Release notes / one-command publish script |
-| `README.md` / `README.zh-CN.md` | This README (English / 中文) |
+| `PortableDropper.exe` | 主程序（单文件，约 2.4MB，拷走它即可用） |
+| `PortableDropper.cs` | 源码 |
+| `PortableDropper.ico` / `.manifest` | 图标 / DPI 清单（编译输入） |
+| `7z.exe` / `7z.dll` | 内置 7-Zip 引擎源文件（已嵌入 exe，仅编译需要） |
+| `LICENSE` | 本项目代码许可（MIT） |
+| `THIRD-PARTY-NOTICES.md` | 第三方组件声明（内嵌 7-Zip，LGPL） |
+| `RELEASE.md` / `publish-gh.ps1` | 发布说明 / 一键发布脚本 |
+| `README.md` / `README.en.md` | 本说明（中文主文档 / 英文可选） |
 
-## UI
+## 界面
 
-- **Dark/light theme** follows the system (dark title bar on Windows 11).
-- **High-DPI crisp**: PerMonitorV2 DPI awareness + GDI text rendering — sharp on 4K / 150% scaling.
-- Built-in app icon, and a built-in **"Manage registered apps"** window (browse / open folder / uninstall).
+- **深色/浅色模式**：跟随系统主题（Win11 上为深色标题栏），高 DPI 下清晰不模糊（PerMonitorV2 + GDI 文本渲染）。
+- **内置图标** + 内置**「管理已注册应用」窗口**（浏览 / 打开目录 / 卸载）。
 
-## Usage
+## 用法
 
-1. **Easiest**: drag a folder or archive onto the `PortableDropper.exe` icon. It processes and exits.
-2. Double-click to open the window, then drop files into the blue drop area (multiple drops OK).
-   Tick **"Also create a desktop shortcut"** in the footer to additionally get a desktop shortcut.
-3. Command line (batch / automation):
+1. **最常用**：把文件夹或压缩包**直接拖到 `PortableDropper.exe` 图标上**，处理完自动退出。
+2. 双击打开窗口，把文件**拖进蓝色区域**（可连拖多次；
+   勾选窗口底部「**同时创建桌面快捷方式**」可额外在桌面生成快捷方式）。
+3. 命令行（批处理/脚本）：
    ```
-   PortableDropper.exe -List                       List registered apps
-   PortableDropper.exe -Uninstall "AppName"        Built-in uninstaller
-   PortableDropper.exe "D:\Downloads\App.zip" -Desktop   Install with a desktop shortcut
+   PortableDropper.exe -List                      列出已注册应用
+   PortableDropper.exe -Uninstall "AppName"       内置卸载（清注册项+快捷方式+文件夹）
+   PortableDropper.exe "D:\下载\App.zip" -Desktop 带桌面快捷方式安装
    ```
 
-## Behavior
+## 处理规则
 
-- **Folder** → moved (cut) into `%LOCALAPPDATA%\Programs\`, original location left empty.
-- **Archive** → extracted to `Programs\<name>\`; the original archive goes to the Recycle Bin on success
-  (`-Keep` keeps it). `.zip` native; `.7z`/`.rar` via the embedded 7-Zip; tar-family via the system.
-- **Other files** (a single `.exe`, etc.) → moved directly into the target folder.
-- **Main-program detection**: `.exe` first (excludes `unins*/setup*/helper*` etc.);
-  falls back to `.bat/.cmd/.vbs` when there is no exe;
-  when several candidates exist a **picker dialog** lets you choose (`-AutoPick` skips it).
-- **Shortcut name cleanup**: `Obsidian-1.6.7-win-x64` → **Obsidian** (folder name stays untouched).
-- **"Apps & features" registration**: writes a per-user uninstall entry (HKCU);
-  its Uninstall button invokes this program's `-Uninstall` for a clean removal.
-- **Name collisions**: folders / shortcuts / registry entries get a ` (2)` suffix — never overwritten.
-- **Cross-drive drops**: automatically fall back to copy-then-delete, same net result.
+- **文件夹** → 整体移动到 `%LOCALAPPDATA%\Programs\`（剪切）。
+- **压缩包** → 解压到 `Programs\<包名>\`，成功后原包自动进回收站：
+  - `.zip` 原生支持；`.7z` / `.rar` **内置 7-Zip**（无需安装）；`.tar/.gz/.bz2/.xz` 系统自带。
+- **其他文件**（单个 exe）→ 直接移动。
+- **主程序识别** → exe 优先（排除 `unins/setup/helper` 等）；没有 exe 时支持 `.bat/.cmd/.vbs`；
+  多个候选时**弹窗让你选择**（`-AutoPick` 跳过）。
+- **快捷方式** → 开始菜单**根目录**，名字自动去掉版本号与常见后缀
+  （`x64/windows/win/portable/stable/beta/64/32…`，如 `Obsidian-1.6.7-win-x64` → **Obsidian**）；
+  **桌面快捷方式为可选项**：命令行加 `-Desktop`，或窗口里勾选「同时创建桌面快捷方式」。
+- **「应用和功能」注册** → 自动写入当前用户卸载表（HKCU，无需管理员）：
+  名称、版本、发布者（自动读 exe 文件信息）、图标、位置、占用大小，
+  「卸载」按钮直接调用本程序 `-Uninstall` 完成清理。
+- **重名处理** → 目录/快捷方式/注册项同名自动加 ` (2)`，绝不覆盖。
 
-## Uninstall
+## 卸载
 
-Three equivalent ways (removes the registry entry + Start Menu / desktop shortcuts + the app folder):
+三种方式，效果相同（移除注册项 + 开始菜单/桌面快捷方式 + 程序文件夹）：
+- 设置 → 应用和功能 → 找到应用 → 卸载（会调用本程序）；
+- 窗口「管理已注册应用」→ 选中 → 卸载所选；
+- 命令行 `PortableDropper.exe -Uninstall "名称"`（加 `-KeepFiles` 可保留文件）。
 
-- Settings → Apps → Apps & features → find the app → **Uninstall** (invokes this program)
-- Main window → **Manage registered apps** → select → **Uninstall selected**
-- CLI: `PortableDropper.exe -Uninstall "Name"` (add `-KeepFiles` to keep the files)
+## 命令行参数
 
-## Command-line options
-
-| Option | Effect |
+| 参数 | 作用 |
 |---|---|
-| `-Destination <path>` | Custom install folder (default `%LOCALAPPDATA%\Programs`) |
-| `-StartMenuFolder <path>` | Custom shortcut folder (default Start Menu\Programs) |
-| `-DesktopFolder <path>` | Custom desktop folder (default the real desktop) |
-| `-Uninstall <name>` | Built-in uninstaller |
-| `-List` | List registered apps (combine with `-Log <file>` to write to a file) |
-| `-Keep` | Keep the original archive after extraction |
-| `-KeepFiles` | Keep the app files during uninstall |
-| `-NoShortcut` / `-NoRegister` | Skip the shortcut / skip Apps & features registration |
-| `-AutoPick` | Pick the main exe automatically when several are found |
-| `-Log <file>` | Write the log to a file |
-| `-Gui` | Open the window even when arguments are given |
+| `-Destination <路径>` | 自定义安装目录（默认 `%LOCALAPPDATA%\Programs`） |
+| `-StartMenuFolder <路径>` | 自定义快捷方式目录（默认 开始菜单\Programs） |
+| `-DesktopFolder <路径>` | 自定义桌面目录（默认真实桌面） |
+| `-Uninstall <名称>` | 内置卸载 |
+| `-List` | 列出已注册应用（配合 `-Log` 可写文件） |
+| `-Keep` | 解压后保留原压缩包 |
+| `-KeepFiles` | 卸载时保留程序文件 |
+| `-NoShortcut` / `-NoRegister` | 跳过快捷方式 / 跳过「应用和功能」注册 |
+| `-AutoPick` | 多 exe 时不弹窗 |
+| `-Log <文件>` | 日志输出到文件 |
+| `-Gui` | 带参数时仍打开窗口 |
 
-## License
+## 许可证
 
-- **This project's code**: [MIT License](LICENSE) (Copyright (c) 2025 yizhimengxin2233) —
-  free to use, modify and use commercially as long as the copyright notice is retained.
-- **Embedded 7-Zip** (`7z.exe` / `7z.dll`): **LGPL** (by Igor Pavlov), unmodified, used only for
-  extraction, distributed as part of this tool — see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)
-  and [7-Zip's website](https://www.7-zip.org/).
+- **本项目代码**：[MIT License](LICENSE)（Copyright (c) 2025 yizhimengxin2233），可自由使用/修改/商用，保留版权声明即可。
+- **内嵌 7-Zip**（`7z.exe`/`7z.dll`）：**LGPL**（作者 Igor Pavlov），未修改、仅用于解压，
+  随本工具整体分发，详见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) 与 [7-Zip 官网](https://www.7-zip.org/)。
 
-## Rebuild (optional — uses the csc built into Windows, no SDK)
+## 重新编译（可选，Windows 自带 csc，无需 SDK）
 
 ```
 csc /nologo /target:winexe /codepage:65001
@@ -108,8 +94,7 @@ csc /nologo /target:winexe /codepage:65001
     /out:PortableDropper.exe PortableDropper.cs
 ```
 
-## Tips
+## 小提示
 
-- Portable apps usually keep their config inside their own folder — moving the whole folder
-  doesn't lose any settings.
-- Keep `PortableDropper.exe` somewhere handy (e.g. `D:\Tools`) and leave your desktop clean.
+- 绿色软件配置一般存在自己文件夹里——整体搬移不丢配置。
+- 建议把 `PortableDropper.exe` 放到方便位置（如 `D:\Tools`），桌面继续不放绿色软件。
